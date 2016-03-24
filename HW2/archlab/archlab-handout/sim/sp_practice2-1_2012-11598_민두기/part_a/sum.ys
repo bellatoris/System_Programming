@@ -1,0 +1,58 @@
+# Name: Doogie Min 
+# Student_ID: 2012-11598
+
+	.pos 0
+init:	
+	irmovl	Stack, %esp
+	rrmovl	%esp, %ebp
+	jmp Main
+	
+	.align 4
+ele1:	
+	.long 0x00a
+	.long ele2
+ele2:	
+	.long 0x0b0
+	.long ele3
+ele3:	
+	.long 0xc00
+	.long 0
+
+Main:	
+	irmovl	ele1, %eax
+	pushl	%eax
+	call	sum_list
+	halt
+
+sum_list:
+	pushl	%ebp
+	rrmovl	%esp, %ebp
+	irmovl	$8, %ebx
+	subl	%ebx, %esp
+	mrmovl	8(%ebp), %eax
+	rmmovl	%eax, -4(%ebp)
+	irmovl	$0, %ebx
+	rmmovl	%ebx, -8(%ebp)
+Loop:
+	irmovl	$0, %ebx
+	mrmovl	-4(%ebp), %ecx
+	subl	%ebx, %ecx
+	je	End
+	mrmovl	-4(%ebp), %eax
+	mrmovl	(%eax), %eax
+	mrmovl	-8(%ebp), %ebx
+	addl	%ebx, %eax
+	rmmovl	%eax, -8(%ebp)
+	mrmovl	-4(%ebp), %eax
+	mrmovl	4(%eax), %eax
+	rmmovl	%eax, -4(%ebp)
+	jmp	Loop
+End:	
+	mrmovl	-8(%ebp), %eax
+	irmovl	$8, %ebx
+	addl	%ebx, %esp
+	popl	%ebp
+	ret
+
+	.pos 0x100
+Stack:
