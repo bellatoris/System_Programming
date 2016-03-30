@@ -10,7 +10,8 @@
 typedef struct __line {
     unsigned long int tag;
     int valid;
-    int LRU;
+//    int LRU;
+    int timestamp;
 } Line;
 
 typedef struct __set {
@@ -27,9 +28,11 @@ typedef struct __cache {
     int s_hit;
     int s_miss;
     int s_evict;
+
+    int verbosity;
 } Cache;
 
-Cache* create_cache(int setsize, int ways, int blocksize)
+Cache* create_cache(int setsize, int ways, int blocksize, int verbosity)
 {
     //allocate cache and initialize them
     //power of 2
@@ -41,6 +44,7 @@ Cache* create_cache(int setsize, int ways, int blocksize)
     my_cache->setsize = setsize;
     my_cache->ways = ways;
     my_cache->blocksize = blocksize;
+    my_cache->verbosity = verbosity;
     
     int i;
     
@@ -63,9 +67,15 @@ void line_access(Cache *my_cache, Line *l, int index)
 {
     //update LRU bit of Line
     my_cache->s_hit++;
+    
+    int i;
+    for (i = 0; i < my_cache->ways; i++) {
+	l[i].timestamp = l[i].timestamp > l[index].timestamp ? l[i].timestamp - 1 : l[i].timestamp;
+    }
+    l[index].timestamp = my_cache->ways - 1;
 
+    /*
     int i = index + my_cache->ways;
-
     while (i) {
 	if(i % 2) {
 	    l[i / 2].LRU = 0;
@@ -74,18 +84,52 @@ void line_access(Cache *my_cache, Line *l, int index)
 	}
 	i = i / 2;
     }
+    */
 }
 
 void line_alloc(Cache *my_cache, Line *l, int tag, int index)
 {
-    //flip the LRU bit
     my_cache->s_miss++;
 
     l[index].valid = 1;
     l[index].tag = tag;
+    int i;
+    for (i = 0; i < my_cache->ways; i++) {
+	l[i].timestamp = l[i].timestamp !=  0 ? l[i].timestamp - 1 : 0;
+    }
+    l[index].timestamp = my_cache->ways - 1; 
+    /*
+    int i = index + my_cache->ways;    
+    while (i) {
+	if(i % 2) {
+	    l[i / 2].LRU = 0;
+	} else {
+	    l[i / 2].LRU = 1;
+	}
+	i = i / 2;
+    } 
+    */
+   //update data structrues to reflect allocation of a new block into a line
+}
 
+void set_find_victim(Cache *my_cache, Line *l, int tag)
+{
+    // for a given set, return the victim line where to place the new block
+    my_cache->s_evict++;
+    my_cache->s_miss++;
+
+    int i;
+    for (i = 0; i < my_cache->ways; i++) {
+	if (!l[i].timestamp) {
+	    l[i].valid = 1;
+	    l[i].tag = tag;
+	    l[i].timestamp = my_cache->ways - 1;
+	} else {
+	    l[i].timestamp--;
+	}
+    }
+    /*
     int i = 1;
-
     while (i < my_cache->ways) {
 	if (l[i].LRU) {
 	    l[i].LRU = 0;
@@ -95,24 +139,10 @@ void line_alloc(Cache *my_cache, Line *l, int tag, int index)
 	    i = 2 * i;
 	}
     }
-   //update data structrues to reflect allocation of a new block into a line
-}
-
-int set_find_victim(Cache *my_cache, Line *l)
-{
-    // for a given set, return the victim line where to place the new block
-    my_cache->s_evict++;
-
-    int i = 1;
-
-    while (i < my_cache->ways) {
-	if (l[i].LRU) {
-	    i = 2 * i + 1;
-	} else {
-	    i = 2 * i;
-	}
-    }
-    return i - my_cache->ways;
+    int k = i - my_cache->ways;
+    l[k].valid = 1;
+    l[k].tag = tag;
+    */
 }
 
 void cache_access(Cache *my_cache, unsigned long int address, int length)
@@ -123,21 +153,21 @@ void cache_access(Cache *my_cache, unsigned long int address, int length)
     //printf("%lx, %lx, %d\n", tag, set_idx, tag_size);
     Line *l = my_cache->set[set_idx].way;
 
+    int verbosity = my_cache->verbosity;
     int i;
     
     for (i = 0; i < my_cache->ways; i++) {
 	if (!l[i].valid) {
-	    printf("miss ");
+	    if(verbosity) printf("miss ");
 	    line_alloc(my_cache, l, tag, i);
 	    break;
 	} else if(l[i].tag == tag) {
-    	    printf("hit ");
+    	    if(verbosity) printf("hit ");
 	    line_access(my_cache, l, i);
 	    break;
 	} else if (i == my_cache->ways - 1) {
-	    printf("miss eviction ");
-	    int k = set_find_victim(my_cache, l);
-	    line_alloc(my_cache, l, tag, k);
+	    if(verbosity) printf("miss eviction ");
+	    set_find_victim(my_cache, l, tag);
 	    break;
 	}
     } 
@@ -162,7 +192,7 @@ void help()
 int main(int argc, char *argv[])
 {
     extern char *optarg;
-    long int v, s, E, b;
+    long int v = 0, s, E, b;
     char t[64];
     int c;
     FILE *fp;
@@ -174,7 +204,7 @@ int main(int argc, char *argv[])
 	    help();
 	    break;
 	case 'v':
-	    v++;
+	    v = 1;
 	    break;
 	case 's':
 	    s = strtol(optarg, NULL, 0);
@@ -191,7 +221,7 @@ int main(int argc, char *argv[])
 	}
     }
 
-    cache = create_cache(s, E, b);
+    cache = create_cache(s, E, b, v);
     
     fp = fopen(t, "r");
     char *type = NULL;
@@ -203,12 +233,10 @@ int main(int argc, char *argv[])
     ssize_t ilen = getline(&line, &ll, fp);
 
     fflush(stdout);
-    if (v)
-	printf("\n");
 
     while (ilen > 0) {
 	if (sscanf(line, "%ms %lx,%x", &type, &address, &length) == 3) {
-	    printf("%s %lx,%x ", type, address, (unsigned int)length);
+	    if (type[0] != 'I') printf("%s %lx,%x ", type, address, length);
 	    switch (type[0]) {
 	    case 'I':
 		break;
@@ -221,12 +249,12 @@ int main(int argc, char *argv[])
 		break;
 	    }
 	}
+	if(type[0] != 'I') printf("\n");
 	if (type != NULL) {
 	    free(type);
 	    type = NULL;
 	}
 	ilen = getline(&line, &ll, fp);
-	printf("\n");
     }
     
     printSummary(cache->s_hit, cache->s_miss, cache->s_evict);
