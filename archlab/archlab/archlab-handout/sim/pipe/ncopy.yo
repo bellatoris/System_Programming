@@ -1,0 +1,104 @@
+                      | #/* $begin ncopy-ys */
+                      | ##################################################################
+                      | # ncopy.ys - Copy a src block of len ints to dst.
+                      | # Return the number of positive ints (>0) contained in src.
+                      | #
+                      | # Include your name and ID here.
+                      | # Name: 민두기
+                      | # Student ID: 2012-11598
+                      | # Describe how and why you modified the baseline code.
+                      | # 
+                      | # iaddl을 pipe-full.hcl에 구현하여 사용하였다.
+                      | # Loop unrolling을 하였고 한번에 옮기는 개수가
+                      | # 6개보다 많아지자 오히려 성능이 떨어져서 6개로
+                      | # 하였다. cmvXX로 성능을 높이려 하였으나 오히려 
+                      | # jXX에 비해 성능이 떨어져 사용하지 않았다.
+                      | #   
+                      | ##################################################################
+                      | # Do not modify this portion
+                      | # Function prologue.
+  0x000: a05f         | ncopy:	pushl %ebp		# Save old frame pointer
+  0x002: 2045         | 	rrmovl %esp,%ebp	# Set up new frame pointer
+  0x004: a06f         | 	pushl %esi		# Save callee-save regs
+  0x006: a03f         | 	pushl %ebx
+  0x008: a07f         | 	pushl %edi
+  0x00a: 503508000000 | 	mrmovl 8(%ebp),%ebx	# src
+  0x010: 502510000000 | 	mrmovl 16(%ebp),%edx	# len
+  0x016: 50150c000000 | 	mrmovl 12(%ebp),%ecx	# dst
+                      | 
+                      | ##################################################################
+                      | # You can modify this portion
+                      | 	# Loop header
+  0x01c: 6300         | 	xorl %eax,%eax		# count = 0
+  0x01e: c0f2fbffffff | 	iaddl $-5, %edx		# len -= 5
+  0x024: 762e000000   | 	jg Loop			# len >= 6
+  0x029: 71db000000   | 	jle Before_Last		# len <= 5
+  0x02e:              | Loop:
+  0x02e: 506300000000 | 	mrmovl (%ebx), %esi
+  0x034: 507304000000 | 	mrmovl 4(%ebx), %edi
+  0x03a: 406100000000 | 	rmmovl %esi, (%ecx)
+  0x040: 407104000000 | 	rmmovl %edi, 4(%ecx)
+  0x046: 6266         | 	andl %esi, %esi	    
+  0x048: 7153000000   | 	jle L1		    
+  0x04d: c0f001000000 | 	iaddl $1, %eax	    
+  0x053:              | L1:
+  0x053: 6277         | 	andl %edi, %edi		
+  0x055: 7160000000   | 	jle L2			
+  0x05a: c0f001000000 | 	iaddl $1, %eax	    
+  0x060:              | L2:
+  0x060: 506308000000 | 	mrmovl 8(%ebx), %esi
+  0x066: 50730c000000 | 	mrmovl 12(%ebx), %edi
+  0x06c: 406108000000 | 	rmmovl %esi, 8(%ecx)
+  0x072: 40710c000000 | 	rmmovl %edi, 12(%ecx)
+  0x078: 6266         | 	andl %esi, %esi
+  0x07a: 7185000000   | 	jle L3
+  0x07f: c0f001000000 | 	iaddl $1, %eax
+  0x085:              | L3:
+  0x085: 6277         | 	andl %edi, %edi
+  0x087: 7192000000   | 	jle L4
+  0x08c: c0f001000000 | 	iaddl $1, %eax
+  0x092:              | L4:
+  0x092: 506310000000 | 	mrmovl 16(%ebx), %esi
+  0x098: 507314000000 | 	mrmovl 20(%ebx), %edi
+  0x09e: 406110000000 | 	rmmovl %esi, 16(%ecx)
+  0x0a4: 407114000000 | 	rmmovl %edi, 20(%ecx)
+  0x0aa: 6266         | 	andl %esi, %esi
+  0x0ac: 71b7000000   | 	jle L5
+  0x0b1: c0f001000000 | 	iaddl $1, %eax
+  0x0b7:              | L5:
+  0x0b7: 6277         | 	andl %edi, %edi
+  0x0b9: 71c4000000   | 	jle L6
+  0x0be: c0f001000000 | 	iaddl $1, %eax
+  0x0c4:              | L6:
+  0x0c4: c0f318000000 | 	iaddl $24, %ebx
+  0x0ca: c0f118000000 | 	iaddl $24, %ecx
+  0x0d0: c0f2faffffff | 	iaddl $-6, %edx
+  0x0d6: 762e000000   | 	jg Loop
+  0x0db:              | Before_Last:
+  0x0db: c0f205000000 | 	iaddl $5, %edx
+  0x0e1: 7316010000   | 	je Done
+  0x0e6:              | Last:
+  0x0e6: 506300000000 | 	mrmovl (%ebx), %esi
+  0x0ec: 406100000000 | 	rmmovl %esi, (%ecx)
+  0x0f2: 6266         | 	andl %esi, %esi
+  0x0f4: 71ff000000   | 	jle Last2
+  0x0f9: c0f001000000 | 	iaddl $1, %eax
+  0x0ff:              | Last2:
+  0x0ff: c0f304000000 | 	iaddl $4, %ebx
+  0x105: c0f104000000 | 	iaddl $4, %ecx
+  0x10b: c0f2ffffffff | 	iaddl $-1, %edx
+  0x111: 76e6000000   | 	jg Last
+                      | ##################################################################
+                      | # Do not modify the following section of code
+                      | # Function epilogue.
+  0x116:              | Done:
+  0x116: b07f         | 	popl %edi               # Restore callee-save registers
+  0x118: b03f         | 	popl %ebx
+  0x11a: b06f         | 	popl %esi
+  0x11c: 2054         | 	rrmovl %ebp, %esp
+  0x11e: b05f         | 	popl %ebp
+  0x120: 90           | 	ret
+                      | ##################################################################
+                      | # Keep the following label at the end of your function
+  0x121:              | End:
+                      | #/* $end ncopy-ys */

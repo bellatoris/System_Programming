@@ -1,5 +1,22 @@
 # Name: Doogie Min
 # Student ID: 2012-11598
+# iaddl
+# Fetch
+#	icode:ifun <- M1[PC]
+#	rA:rB <- M1[PC + 1]
+#	valC <- M4[PC + 2]
+#	valP <- PC + 6
+# Decode
+#	valB <- R[rB]
+# Execute
+#	valE <- valB OP valC
+#	set CC
+# Memory
+# Write back
+#	R[rB] <- valE
+# PC update
+#	PC <- valP
+#
 #/* $begin pipe-all-hcl */
 ####################################################################
 #    HCL Description of Control for Pipelined Y86 Processor        #

@@ -24,7 +24,13 @@
                       | # Name: 민두기
                       | # Student ID: 2012-11598
                       | # Describe how and why you modified the baseline code.
-                      | #
+                      | # 
+                      | # iaddl을 pipe-full.hcl에 구현하여 사용하였다.
+                      | # Loop unrolling을 하였고 한번에 옮기는 개수가
+                      | # 6개보다 많아지자 오히려 성능이 떨어져서 6개로
+                      | # 하였다. cmovXX로 성능을 높이려 하였으나 오히려 
+                      | # jXX에 비해 성능이 떨어져 사용하지 않았다.
+                      | #   
                       | ##################################################################
                       | # Do not modify this portion
                       | # Function prologue.
@@ -41,21 +47,21 @@
                       | # You can modify this portion
                       | 	# Loop header
   0x046: 6300         | 	xorl %eax,%eax		# count = 0
-  0x048: c0f2fbffffff | 	iaddl $-5, %edx		# len -= 3
-  0x04e: 7658000000   | 	jg Loop			# len >= 4
-  0x053: 7105010000   | 	jle Before_Last		# len <= 3
+  0x048: c0f2fbffffff | 	iaddl $-5, %edx		# len -= 5
+  0x04e: 7658000000   | 	jg Loop			# len >= 6
+  0x053: 7105010000   | 	jle Before_Last		# len <= 5
   0x058:              | Loop:
   0x058: 506300000000 | 	mrmovl (%ebx), %esi
   0x05e: 507304000000 | 	mrmovl 4(%ebx), %edi
   0x064: 406100000000 | 	rmmovl %esi, (%ecx)
   0x06a: 407104000000 | 	rmmovl %edi, 4(%ecx)
-  0x070: 6266         | 	andl %esi, %esi		# val <= 0?
-  0x072: 717d000000   | 	jle L1			# if then, jmp
-  0x077: c0f001000000 | 	iaddl $1, %eax		# count++;
+  0x070: 6266         | 	andl %esi, %esi	    
+  0x072: 717d000000   | 	jle L1		    
+  0x077: c0f001000000 | 	iaddl $1, %eax	    
   0x07d:              | L1:
-  0x07d: 6277         | 	andl %edi, %edi		# val <= 0?
-  0x07f: 718a000000   | 	jle L2			# if then, jmp
-  0x084: c0f001000000 | 	iaddl $1, %eax		# count++;
+  0x07d: 6277         | 	andl %edi, %edi		
+  0x07f: 718a000000   | 	jle L2			
+  0x084: c0f001000000 | 	iaddl $1, %eax	    
   0x08a:              | L2:
   0x08a: 506308000000 | 	mrmovl 8(%ebx), %esi
   0x090: 50730c000000 | 	mrmovl 12(%ebx), %edi
@@ -121,9 +127,9 @@
   0x14c:              | 	.align 4
   0x14c:              | src:
   0x14c: 01000000     | 	.long 1
-  0x150: 02000000     | 	.long 2
+  0x150: feffffff     | 	.long -2
   0x154: fdffffff     | 	.long -3
-  0x158: fcffffff     | 	.long -4
+  0x158: 04000000     | 	.long 4
   0x15c: fadebc00     | 	.long 0xbcdefa # This shouldn't get moved
                       | 
   0x160:              | 	.align 16
