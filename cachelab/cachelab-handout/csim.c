@@ -64,10 +64,7 @@ void line_access(Cache *my_cache, Line *l, int index)
     //update LRU bit of Line
     my_cache->s_hit++;
 
-    if (my_cache->ways == 1)
-	return;
-
-    int i = index;
+    int i = index + my_cache->ways;
 
     while (i) {
 	if(i % 2) {
@@ -87,12 +84,9 @@ void line_alloc(Cache *my_cache, Line *l, int tag, int index)
     l[index].valid = 1;
     l[index].tag = tag;
 
-    if (my_cache->ways == 1)
-	return;
-
     int i = 1;
 
-    while (i < 2 * my_cache->ways) {
+    while (i < my_cache->ways) {
 	if (l[i].LRU) {
 	    l[i].LRU = 0;
 	    i = 2 * i + 1;
@@ -100,7 +94,7 @@ void line_alloc(Cache *my_cache, Line *l, int tag, int index)
 	    l[i].LRU = 1;
 	    i = 2 * i;
 	}
-    } 
+    }
    //update data structrues to reflect allocation of a new block into a line
 }
 
@@ -109,31 +103,28 @@ int set_find_victim(Cache *my_cache, Line *l)
     // for a given set, return the victim line where to place the new block
     my_cache->s_evict++;
 
-    if(my_cache->ways == 1) 
-	return 0;
-
     int i = 1;
 
-    while (2 * i < 2 * my_cache->ways) {
+    while (i < my_cache->ways) {
 	if (l[i].LRU) {
 	    i = 2 * i + 1;
 	} else {
 	    i = 2 * i;
 	}
     }
-    return i;
+    return i - my_cache->ways;
 }
 
 void cache_access(Cache *my_cache, unsigned long int address, int length)
 { 
     int tag_size = 64 - (my_cache->setsize + my_cache->blocksize);
     unsigned long int tag = address >> (my_cache->setsize + my_cache->blocksize);
-    unsigned long int set_idx = ((address >> my_cache->blocksize) << tag_size) >> tag_size;
-   
+    unsigned long int set_idx = ((address >> my_cache->blocksize) << (tag_size + my_cache->blocksize)) >> (tag_size + my_cache->blocksize);
+    //printf("%lx, %lx, %d\n", tag, set_idx, tag_size);
     Line *l = my_cache->set[set_idx].way;
 
     int i;
-    printf("%d\n", my_cache->ways);
+    
     for (i = 0; i < my_cache->ways; i++) {
 	if (!l[i].valid) {
 	    printf("miss ");
@@ -144,9 +135,10 @@ void cache_access(Cache *my_cache, unsigned long int address, int length)
 	    line_access(my_cache, l, i);
 	    break;
 	} else if (i == my_cache->ways - 1) {
-	    printf("miss eviction\n");
+	    printf("miss eviction ");
 	    int k = set_find_victim(my_cache, l);
 	    line_alloc(my_cache, l, tag, k);
+	    break;
 	}
     } 
 } 
@@ -210,8 +202,6 @@ int main(int argc, char *argv[])
     size_t ll = 0;
     ssize_t ilen = getline(&line, &ll, fp);
 
-    int count = 0;
-
     fflush(stdout);
     if (v)
 	printf("\n");
@@ -237,11 +227,6 @@ int main(int argc, char *argv[])
 	}
 	ilen = getline(&line, &ll, fp);
 	printf("\n");
-	count++;
-	if (!v && (count % 32678 == 0)) {
-	    printf(".");
-	    fflush(stdout);
-	}
     }
     
     printSummary(cache->s_hit, cache->s_miss, cache->s_evict);
