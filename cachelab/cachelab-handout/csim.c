@@ -1,3 +1,20 @@
+/*
+ * Name: 민두기
+ * Student ID: 2012-11598
+ * LRU의 경우 pseudo LRU로 구현하려 시도했었고
+ * 상당히 잘 동작했지만 한가지 경우에 옳지(ref와 같지 않은)
+ * 경우가 나와 timestamp를 이용하여 구현하였다.
+ * ref보다 hit이 더 높은경우도 있었는데 꼭 같아야만 점수가 
+ * 채점되는 방식이 조금 아쉬웠다.
+ * timestamp의 경우 access, alloc, find_victim 함수에서 모두
+ * 새로히 로드하거나 access한 경우 line_no - 1만큼으로 set하고
+ * 그것을 제외한 다른 line들은 timestamp를 1씩 감소시켰다.
+ * 물론 같은게 반복적으로 access될 수 있으니 0부터 line_no - 1까지
+ * 잘 ordering 하기 위해 access하는 line보다 timestamp가 큰 
+ * line들의 timestamp만 감소시켰다.
+ *
+ */
+
 #include "cachelab.h"
 #include <assert.h>
 #include <getopt.h>
@@ -35,7 +52,6 @@ typedef struct __cache {
 Cache* create_cache(int setsize, int ways, int blocksize, int verbosity)
 {
     //allocate cache and initialize them
-    //power of 2
     int num_of_setsize = (int)pow((double)2, (double)setsize);
 
     Cache *my_cache = (Cache*)calloc(1, sizeof(Cache));
@@ -66,6 +82,7 @@ void delete_cache(Cache *my_cache)
 void line_access(Cache *my_cache, Line *l, int index)
 {
     //update LRU bit of Line
+    //update timestamp
     my_cache->s_hit++;
     
     int i;
@@ -89,6 +106,8 @@ void line_access(Cache *my_cache, Line *l, int index)
 
 void line_alloc(Cache *my_cache, Line *l, int tag, int index)
 {
+    //update valid
+    //update tag
     my_cache->s_miss++;
 
     l[index].valid = 1;
@@ -112,9 +131,9 @@ void line_alloc(Cache *my_cache, Line *l, int tag, int index)
    //update data structrues to reflect allocation of a new block into a line
 }
 
-void set_find_victim(Cache *my_cache, Line *l, int tag)
+void find_victim(Cache *my_cache, Line *l, int tag)
 {
-    // for a given set, return the victim line where to place the new block
+    // find victim and alloc
     my_cache->s_evict++;
     my_cache->s_miss++;
 
@@ -146,7 +165,9 @@ void set_find_victim(Cache *my_cache, Line *l, int tag)
 }
 
 void cache_access(Cache *my_cache, unsigned long int address, int length)
-{ 
+{
+    //compute tag and set_idx
+    //
     int tag_size = 64 - (my_cache->setsize + my_cache->blocksize);
     unsigned long int tag = address >> (my_cache->setsize + my_cache->blocksize);
     unsigned long int set_idx = ((address >> my_cache->blocksize) << (tag_size + my_cache->blocksize)) >> (tag_size + my_cache->blocksize);
@@ -158,16 +179,16 @@ void cache_access(Cache *my_cache, unsigned long int address, int length)
     
     for (i = 0; i < my_cache->ways; i++) {
 	if (!l[i].valid) {
-	    if(verbosity) printf("miss ");
+	    if (verbosity) printf("miss ");
 	    line_alloc(my_cache, l, tag, i);
 	    break;
-	} else if(l[i].tag == tag) {
-    	    if(verbosity) printf("hit ");
+	} else if (l[i].tag == tag) {
+    	    if (verbosity) printf("hit ");
 	    line_access(my_cache, l, i);
 	    break;
 	} else if (i == my_cache->ways - 1) {
-	    if(verbosity) printf("miss eviction ");
-	    set_find_victim(my_cache, l, tag);
+	    if (verbosity) printf("miss eviction ");
+	    find_victim(my_cache, l, tag);
 	    break;
 	}
     } 
@@ -197,7 +218,7 @@ int main(int argc, char *argv[])
     int c;
     FILE *fp;
     Cache *cache;
-
+    //use getopt for option
     while ((c = getopt(argc, argv, "hvs:E:b:t:"))!= -1) {
 	switch(c) {
 	case 'h':
@@ -233,7 +254,7 @@ int main(int argc, char *argv[])
     ssize_t ilen = getline(&line, &ll, fp);
 
     fflush(stdout);
-
+    //cache access line by line
     while (ilen > 0) {
 	if (sscanf(line, "%ms %lx,%x", &type, &address, &length) == 3) {
 	    if (type[0] != 'I') printf("%s %lx,%x ", type, address, length);
