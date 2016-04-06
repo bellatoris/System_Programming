@@ -170,8 +170,10 @@ void cache_access(Cache *my_cache, unsigned long int address, int length)
     //
     int tag_size = 64 - (my_cache->setsize + my_cache->blocksize);
     unsigned long int tag = address >> (my_cache->setsize + my_cache->blocksize);
-    unsigned long int set_idx = ((address >> my_cache->blocksize) << (tag_size + my_cache->blocksize)) >> (tag_size + my_cache->blocksize);
-    //printf("%lx, %lx, %d\n", tag, set_idx, tag_size);
+    unsigned long int set_idx = ((address >> my_cache->blocksize) <<
+				    (tag_size + my_cache->blocksize)) >>
+					(tag_size + my_cache->blocksize);
+    
     Line *l = my_cache->set[set_idx].way;
 
     int verbosity = my_cache->verbosity;
@@ -213,7 +215,7 @@ void help()
 int main(int argc, char *argv[])
 {
     extern char *optarg;
-    long int v = 0, s, E, b;
+    long int v = 0, s = 0, E = 0, b = 0;
     char t[64];
     int c;
     FILE *fp;
@@ -245,37 +247,34 @@ int main(int argc, char *argv[])
     cache = create_cache(s, E, b, v);
     
     fp = fopen(t, "r");
+
+    if(!s || !E || !b || !fp) {
+	return -1;
+    }
+
     char *type = NULL;
     unsigned long int address;
     int length;
 
-    char *line = NULL;
-    size_t ll = 0;
-    ssize_t ilen = getline(&line, &ll, fp);
-
-    fflush(stdout);
     //cache access line by line
-    while (ilen > 0) {
-	if (sscanf(line, "%ms %lx,%x", &type, &address, &length) == 3) {
-	    if (type[0] != 'I') printf("%s %lx,%x ", type, address, length);
-	    switch (type[0]) {
-	    case 'I':
-		break;
-	    case 'M':
-	    case 'L':
-		cache_access(cache, address, length);
-		if (type[0] == 'L') break;
-	    case 'S':
-		cache_access(cache, address, length);
-		break;
-	    }
+    while (fscanf(fp, "%ms %lx,%x", &type, &address, &length) != EOF) {
+	if (type[0] != 'I') printf("%s %lx,%x ", type, address, length);
+	switch (type[0]) {
+	case 'I':
+	    break;
+	case 'M':
+	case 'L':
+	    cache_access(cache, address, length);
+	    if (type[0] == 'L') break;
+	case 'S':
+	    cache_access(cache, address, length);
+	    break;
 	}
 	if(type[0] != 'I') printf("\n");
 	if (type != NULL) {
 	    free(type);
 	    type = NULL;
 	}
-	ilen = getline(&line, &ll, fp);
     }
     
     printSummary(cache->s_hit, cache->s_miss, cache->s_evict);
