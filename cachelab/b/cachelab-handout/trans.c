@@ -1,3 +1,44 @@
+/*
+ * Name: 민두기
+ * Student ID: 2012-11598
+ * Design 설명: 
+ * set index가 5bit이고, block index가 5bit라 32개의 set과 32byte의
+ * block이 존재하는 cache이다. 그러나 Direct mapped Cache이기 때문에
+ * set index가 동일하고 tag가 다르면 무조건 cache miss가 나고
+ * eviction이 일어나게 된다. 
+ * Test set의 size가 모두 다르기 때문에 각각의 경우에 다른 
+ * transpose함수를 사용해야 원하는 조건을 만족시킬 수 있어 
+ * 함수포인터를 이용하였다. 61 x 67 size의 행렬의 경우
+ * 32byte의 block size를 활용하기 위하여 8 x 8로 tile화 하여
+ * transpose하였다. 무난하게 cache miss를 2000밑으로 만들 수 있었다.
+ * 32 x 32 size 행렬의 경우 B[i][i] = A[i][i]를 할 때 eviction이 생겨서
+ * cache miss를 유발한다는 것을 알 수 있다. 이는 block size가 32byte라 
+ * set index가 8개의 integer마다 1씩 증가하지만 set의 크기가 32개 뿐이라
+ * 어는 순간 set index가 같은 원소를 tranpose 하기 때문이다. 32 x 32의 경우
+ * tile을 transpose할 때 set index가 같은 것 끼리 transpose하는
+ * 경우는 B[i][i] = A[i][i]일 때 뿐이다. 그러므로 이때 A[i][i]의
+ * 값을 미리 저장해 두었다가 루프가 끝나고 B[i][i]에 넣어주는 방식으로
+ * cache miss를 300미만으로 만들 수 있었다.
+ * 64 * 64 size 행렬의 경우 한 tile에서 B[i][i] = A[i][i]일 때 뿐만아니라
+ * B[i + 4][i] = A[i][i + 4], B[i][i + 4] = A[i + 4][i]일 때도 cache miss
+ * 가 나게 된다. Tile의 크기를 4 x 4로 줄이고, 32 x 32 size 행렬의 경우와
+ * 마찬가지로 cache miss가 생기는 경우 미리 register에 넣어 놨다가
+ * 다시 넣는 형식으로 해보았지만 1600밑으로는 줄어 들지 않았다.
+ * blocksize가 32byte인데 이를 제대로 활용 못했기 때문이다. 
+ * 그래서 8 x 8 tile size를 그대로 유지하고 좀더 활용해 보기로 하였다.
+ * tile:
+ *  a	b
+ *  c	d
+ * 라고 하면 (a, b, c, d)의 크기는 모두 4 x 4이다. a를 tranpose 할 때
+ * 무난하게 cache miss를 피하면서 transpose해준다. 그러나 추가적으로
+ * a를 tranpose할 때 사용되었으며 cache되어있는 b부분을 B의 b부분에 
+ * 넣어준다. 이때 좀더 자연스럽게 b부분이 transpose되면서B의 b부분에
+ * 들어가진다.
+ * 그후 B의 b부분을 memory에 넣고 A의 c부분을 받아 transpose해서
+ * B의 b부분에 넣고 앞서 memory에 담았던 것을 B의 c부분에 넣는다.
+ * 마지막으로 d부분을 cache miss를 피해가며 담으면 transpose가
+ * 완료된다. 이 방법을 사용해 cache miss를 1300미만으로 만들 수 있었다.
+ */
 /* 
  * trans.c - Matrix transpose B = A^T
  *
@@ -122,7 +163,7 @@ void transpose_64(int M, int N, int A[N][M], int B[M][N])
 void transpose_61(int M, int N, int A[N][M], int B[M][N])
 {
     int row_block = 8;
-    int col_block = 4;
+    int col_block = 8;
     for (int i = 0; i < N; i += row_block) {
 	for (int j = 0; j < M; j += col_block) {
 	    for (int k = j; k < j + col_block && k < M; k++) {
