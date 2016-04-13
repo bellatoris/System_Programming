@@ -1,0 +1,61 @@
+# Name: Doogie Min 
+# Student_ID: 2012-11598
+
+	.pos 0
+init:	
+	irmovl	Stack, %esp
+	rrmovl	%esp, %ebp
+	jmp Main
+	
+	.align 4
+src:
+	.long	0x00a
+	.long	0x0b0
+	.long	0xc00
+
+dest:
+	.long	0x111
+	.long	0x222
+	.long	0x333
+
+Main:	
+	irmovl	$3, %eax
+	pushl	%eax
+	irmovl	dest, %eax
+	pushl	%eax
+	irmovl	src, %eax
+	pushl	%eax
+	call	copy_block
+	halt
+
+copy_block:
+	pushl	%esi
+	pushl	%ebx
+	mrmovl	12(%esp), %ecx
+	mrmovl	16(%esp), %ebx
+	mrmovl	20(%esp), %edx
+	andl	%edx, %edx
+	jle	Loop2
+	irmovl	$0, %eax
+Loop1:
+	irmovl	$4, %edi
+	addl	%edi, %ecx
+	mrmovl	-4(%ecx), %esi
+	irmovl	$4, %edi
+	addl	%edi, %ebx
+	rmmovl	%esi, -4(%ebx)
+	xorl	%esi, %eax
+	irmovl	$1, %edi
+	subl	%edi, %edx
+	jne	Loop1
+	jmp	End
+Loop2:
+	irmovl	$0, %edi
+	rrmovl	%edi, %eax
+End:	
+	popl	%ebx
+	popl	%esi
+	ret
+
+	.pos 0x1000
+Stack:

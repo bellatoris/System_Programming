@@ -1,0 +1,104 @@
+#/* $begin ncopy-ys */
+##################################################################
+# ncopy.ys - Copy a src block of len ints to dst.
+# Return the number of positive ints (>0) contained in src.
+#
+# Include your name and ID here.
+# Name: 민두기
+# Student ID: 2012-11598
+# Describe how and why you modified the baseline code.
+# 
+# iaddl을 pipe-full.hcl에 구현하여 사용하였다.
+# Loop unrolling을 하였고 한번에 옮기는 개수가
+# 6개보다 많아지자 오히려 성능이 떨어져서 6개로
+# 하였다. cmovXX로 성능을 높이려 하였으나 오히려 
+# jXX에 비해 성능이 떨어져 사용하지 않았다.
+#   
+##################################################################
+# Do not modify this portion
+# Function prologue.
+ncopy:	pushl %ebp		# Save old frame pointer
+	rrmovl %esp,%ebp	# Set up new frame pointer
+	pushl %esi		# Save callee-save regs
+	pushl %ebx
+	pushl %edi
+	mrmovl 8(%ebp),%ebx	# src
+	mrmovl 16(%ebp),%edx	# len
+	mrmovl 12(%ebp),%ecx	# dst
+
+##################################################################
+# You can modify this portion
+	# Loop header
+	xorl %eax,%eax		# count = 0
+	iaddl $-5, %edx		# len -= 5
+	jg Loop			# len >= 6
+	jle Before_Last		# len <= 5
+Loop:
+	mrmovl (%ebx), %esi
+	mrmovl 4(%ebx), %edi
+	rmmovl %esi, (%ecx)
+	rmmovl %edi, 4(%ecx)
+	andl %esi, %esi	    
+	jle L1		    
+	iaddl $1, %eax	    
+L1:
+	andl %edi, %edi		
+	jle L2			
+	iaddl $1, %eax	    
+L2:
+	mrmovl 8(%ebx), %esi
+	mrmovl 12(%ebx), %edi
+	rmmovl %esi, 8(%ecx)
+	rmmovl %edi, 12(%ecx)
+	andl %esi, %esi
+	jle L3
+	iaddl $1, %eax
+L3:
+	andl %edi, %edi
+	jle L4
+	iaddl $1, %eax
+L4:
+	mrmovl 16(%ebx), %esi
+	mrmovl 20(%ebx), %edi
+	rmmovl %esi, 16(%ecx)
+	rmmovl %edi, 20(%ecx)
+	andl %esi, %esi
+	jle L5
+	iaddl $1, %eax
+L5:
+	andl %edi, %edi
+	jle L6
+	iaddl $1, %eax
+L6:
+	iaddl $24, %ebx
+	iaddl $24, %ecx
+	iaddl $-6, %edx
+	jg Loop
+Before_Last:
+	iaddl $5, %edx
+	je Done
+Last:
+	mrmovl (%ebx), %esi
+	rmmovl %esi, (%ecx)
+	andl %esi, %esi
+	jle Last2
+	iaddl $1, %eax
+Last2:
+	iaddl $4, %ebx
+	iaddl $4, %ecx
+	iaddl $-1, %edx
+	jg Last
+##################################################################
+# Do not modify the following section of code
+# Function epilogue.
+Done:
+	popl %edi               # Restore callee-save registers
+	popl %ebx
+	popl %esi
+	rrmovl %ebp, %esp
+	popl %ebp
+	ret
+##################################################################
+# Keep the following label at the end of your function
+End:
+#/* $end ncopy-ys */
