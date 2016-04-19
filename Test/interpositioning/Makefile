@@ -11,7 +11,7 @@ hellor: hello.c
 	$(CC) $(CFLAGS) -o hellor hello.c
 
 runr:
-	(LD_PRELOAD="/usr/lib64/libdl.so ./mymalloc.so" ./hellor)	
+	(LD_PRELOAD="/usr/lib/libdl.dylib ./mymalloc.so" ./hellor)	
 
 #########################
 # Link-time interposition
