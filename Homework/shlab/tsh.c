@@ -165,6 +165,27 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    char *argv[MAXARGS];
+    int bg;
+    pid_t pid;
+
+    bg = parseline(cmdline, argv);
+    if (!builtin_cmd(argv)) {
+	if ((pid = fork()) == 0) {
+		if (execve(argv[0], argv, environ < 0)) {
+		    printf("%s: Command not found.\n", argv[0]);
+		    exit(0);
+		}
+	}
+	
+	if (!bg) {
+	    int status;
+	    if (waitpid(pid, &status, 0) < 0)
+		unix_error("waitfg: waitpid error");
+	} else {
+	    printf("%d %s", pid, cmdline);
+	}
+    }
     return;
 }
 
@@ -263,6 +284,10 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    int child_status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &child_status, WNOHANG)) > 0) {
+    }
     return;
 }
 
@@ -273,6 +298,7 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    exit(0);
     return;
 }
 
@@ -283,6 +309,7 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    pause();
     return;
 }
 
