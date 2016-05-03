@@ -265,24 +265,19 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    int i = 1;
     if (!strcmp(argv[0], "quit")) {
 	exit(0);
     } else if (!strcmp(argv[0], "jobs")) {
-	int i;
-	
-	for (i = 0; i < MAXJOBS; i++) {
-	    if ((jobs[i].pid != 0) && (jobs[i].state == BG)) {
-		printf("Backgtound jobs: ");
-		printf("[%d] %d ", jobs[i].jid, jobs[i].pid);
-		printf("%s", jobs[i].cmdline);
-	    }
-	}
+	listjobs(jobs);
     } else if (!strcmp(argv[0], "bg")) {
 	do_bgfg(argv);
     } else if (!strcmp(argv[0], "fg")) {
 	do_bgfg(argv);
+    } else {
+	i = 0;
     }
-    return 0;     /* not a builtin command */
+    return i;     /* not a builtin command */
 }
 
 /* 
