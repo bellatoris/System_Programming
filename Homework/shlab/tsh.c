@@ -292,18 +292,21 @@ void do_bgfg(char **argv)
 	if (isdigit(argv[1][0])) {
 	    id = atoi(argv[1]);
 	    if (!(job = getjobpid(jobs, id))) {
-		printf("No such job\n");
+		printf("(%d): No such process\n", id);
+		return;
+	    }
+	} else if(argv[1][0] == '%'){
+	    id = atoi(argv[1] + 1);
+	    if (!(job = getjobjid(jobs, id))) {
+		printf("%%%d: No such job\n", id);
 		return;
 	    }
 	} else {
-	    id = atoi(argv[1] + 1);
-	    if (!(job = getjobjid(jobs, id))) {
-		printf("No such job\n");
-		return;
-	    }
+	    printf("%s: argument must be a PID or %%jobid\n", argv[0]);
+	    return;
 	}
     } else {
-	printf("Command requires PID or JID\n");
+	printf("%s command requires PID or %%jobid argument\n", argv[0]);
 	return;
     }
 
@@ -350,14 +353,14 @@ void sigchld_handler(int sig)
 	if (WIFEXITED(child_status)) {
 	    deletejob(jobs, pid);
 	} else if (WIFSIGNALED(child_status)) {
-	    deletejob(jobs, pid);
 	    printf("Job [%d] (%d) terminated by signal 2\n", job->jid, job->pid);
+	    deletejob(jobs, pid);
 	} else if (WIFSTOPPED(child_status)) {
-	    getjobpid(jobs, pid)->state = ST;
 	    printf("Job [%d] (%d) stopped by signal 20\n", job->jid, job->pid);
+	    getjobpid(jobs, pid)->state = ST;
 	}
     }
-    if (errno != ECHILD)
+    if (errno != ECHILD && pid < 0)
 	unix_error("waitpid error");
     return;
 }
