@@ -172,19 +172,27 @@ void eval(char *cmdline)
     pid_t pid;
     sigset_t mask;
 
-    bg = parseline(cmdline, argv);
-    if (argv[0] == NULL)
-	return;	    /* Ignore empty lines */
+    //check argv[0] is NULL
+    if (!argv[0])
+	return; 
 
+    bg = parseline(cmdline, argv);
+    //check argv[0] is build_in command
     if (!builtin_cmd(argv)) {
-	//input is not built-in command
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGCHLD);
+	//block signal for synchronization
 	sigprocmask(SIG_BLOCK, &mask, NULL);
 
 	if ((pid = fork()) == 0) {
 	    //child process
+	    //put child in a new process group whose group ID is identical
+	    //to the child's PID. This ensures that there will be only one
+	    //process in the foreground porcess group. When type ctrl-c, the
+	    //shell should catch the resulting SIGINT and then forward it to
+	    //the appropriate foreground job.
 	    setpgid(0, 0);
+	    //unblock signal
 	    sigprocmask(SIG_UNBLOCK, &mask, NULL);
 	    if (execve(argv[0], argv, environ) < 0) {
 		printf("%s: Command not found.\n", argv[0]);
@@ -196,11 +204,12 @@ void eval(char *cmdline)
 	    addjob(jobs, pid, FG, cmdline);
 	 else 
 	    addjob(jobs, pid, BG, cmdline);
-	
+	//unblock signal
 	sigprocmask(SIG_UNBLOCK, &mask, NULL);
-
+	
+	
 	if (!bg) {
-	    //Parent waits for foreground job to terminate
+	    //wait until foreground job terminate
 	    waitfg(pid);
 	} else {
 	    printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
@@ -282,9 +291,10 @@ int builtin_cmd(char **argv)
     } else if (!strcmp(argv[0], "fg")) {
 	do_bgfg(argv);
     } else {
+	//not a built-in command
 	i = 0;
     }
-    return i;     /* not a builtin command */
+    return i;     
 }
 
 /* 
@@ -296,6 +306,7 @@ void do_bgfg(char **argv)
     struct job_t *job;
 
     if (argv[1]) {
+	//check argv[1] is PID or JID
 	if (isdigit(argv[1][0])) {
 	    id = atoi(argv[1]);
 	    if (!(job = getjobpid(jobs, id))) {
@@ -309,6 +320,7 @@ void do_bgfg(char **argv)
 		return;
 	    }
 	} else {
+	    //wrong input
 	    printf("%s: argument must be a PID or %%jobid\n", argv[0]);
 	    return;
 	}
@@ -316,13 +328,14 @@ void do_bgfg(char **argv)
 	printf("%s command requires PID or %%jobid argument\n", argv[0]);
 	return;
     }
-
+    //send SIGCONT
     kill(-job->pid, SIGCONT);
 
     if (!strcmp(argv[0], "bg")) {
 	job->state = BG;
 	printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
     } else {
+	//wait until foreground job terminate
 	job->state = FG;
 	waitfg(job->pid);
     }
@@ -331,6 +344,7 @@ void do_bgfg(char **argv)
 
 /* 
  * waitfg - Block until process pid is no longer the foreground process
+ *	    busy-loop and sleep
  */
 void waitfg(pid_t pid)
 {
@@ -358,11 +372,14 @@ void sigchld_handler(int sig)
     while ((pid = waitpid(-1, &child_status, WNOHANG | WUNTRACED)) > 0) {
 	job = getjobpid(jobs, pid);
 	if (WIFEXITED(child_status)) {
+	    //child terminate normally
 	    deletejob(jobs, pid);
 	} else if (WIFSIGNALED(child_status)) {
+	    //child termainate due to signal
 	    printf("Job [%d] (%d) terminated by signal 2\n", job->jid, job->pid);
 	    deletejob(jobs, pid);
 	} else if (WIFSTOPPED(child_status)) {
+	    //child stop due to signal
 	    printf("Job [%d] (%d) stopped by signal 20\n", job->jid, job->pid);
 	    getjobpid(jobs, pid)->state = ST;
 	}
@@ -379,6 +396,7 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    //get foreground job's pid
     pid_t pid = fgpid(jobs);
     if (pid)
 	kill(-pid, SIGINT);
@@ -392,10 +410,10 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    //get foreground job's pid
     pid_t pid = fgpid(jobs);
-    if (pid) {
+    if (pid) 
 	kill(-pid, SIGTSTP);
-    }
     return;
 }
 
