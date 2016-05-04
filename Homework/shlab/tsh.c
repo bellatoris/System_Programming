@@ -172,11 +172,11 @@ void eval(char *cmdline)
     pid_t pid;
     sigset_t mask;
 
+    bg = parseline(cmdline, argv);
     //check argv[0] is NULL
     if (!argv[0])
-	return; 
+	return;
 
-    bg = parseline(cmdline, argv);
     //check argv[0] is build_in command
     if (!builtin_cmd(argv)) {
 	sigemptyset(&mask);
