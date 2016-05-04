@@ -173,12 +173,17 @@ void eval(char *cmdline)
     sigset_t mask;
 
     bg = parseline(cmdline, argv);
+    if (argv[0] == NULL)
+	return;	    /* Ignore empty lines */
+
     if (!builtin_cmd(argv)) {
+	//input is not built-in command
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &mask, NULL);
 
 	if ((pid = fork()) == 0) {
+	    //child process
 	    setpgid(0, 0);
 	    sigprocmask(SIG_UNBLOCK, &mask, NULL);
 	    if (execve(argv[0], argv, environ) < 0) {
@@ -186,6 +191,7 @@ void eval(char *cmdline)
 		exit(0);
 	    }
 	}
+	//parent process
 	if (!bg)
 	    addjob(jobs, pid, FG, cmdline);
 	 else 
@@ -194,6 +200,7 @@ void eval(char *cmdline)
 	sigprocmask(SIG_UNBLOCK, &mask, NULL);
 
 	if (!bg) {
+	    //Parent waits for foreground job to terminate
 	    waitfg(pid);
 	} else {
 	    printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
