@@ -88,6 +88,7 @@ static int my_class(size_t size)
 }
 
 static char *heap_listp;
+static size_t class1 = 0;
 static size_t class2 = 0;
 static size_t class3 = 0;
 static size_t class4 = 0;
@@ -98,10 +99,17 @@ static size_t class8 = 0;
 static size_t class9 = 0;
 static size_t class10 = 0;
 static size_t class11 = 0;
+static size_t class12 = 0;
+static size_t class13 = 0;
+static size_t class14 = 0;
+static size_t class15 = 0;
+static size_t class16 = 0;
 
 static void *find_class(int class) 
 {
     switch (class) {
+    case 1:
+	    return &class1;
     case 2:
 	    return &class2;
     case 3:
@@ -120,8 +128,19 @@ static void *find_class(int class)
 	    return &class9;
     case 10:
 	    return &class10;
+    case 11:
+	    return &class11;
+    case 12:
+	    return &class12;
+    case 13:
+	    return &class13;
+    case 14:
+	    return &class14;
+    case 15:
+	    return &class15;
+    default:
+	    return &class16;
     }
-    return &class11;
 }
 
 /* 
@@ -163,7 +182,7 @@ static void *extend_heap(size_t words)
     PUT(FTRP(bp), PACK(size, 0));	    /* Free block footer */
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));   /* New epilogue header */
 
-    /* Coalesce if the previous block was free */
+    /* Coalesce if the previous block or next block was free */
     return coalesce(bp);
 }
 
@@ -219,36 +238,35 @@ void mm_free(void *ptr)
     coalesce(ptr);
 }
 
-static void *in_class(void *bp) 
+static void in_class(void *bp) 
 {
     size_t size = GET_SIZE(HDRP(bp));
-    char *class = (char *)find_class(my_class(size));
-    
-    if (*(size_t *)class) {
-	*(size_t *)bp = *(size_t *)class;
-	*(size_t *)class = (size_t)bp;
-    } else {
-	*(size_t *)class = (size_t)bp;
-	*(size_t *)bp = 0;
-    }
-    return bp;
+    char *class = find_class(my_class(size));
+
+    *(size_t *)bp = *(size_t *)class;
+    *(size_t *)class = (size_t)bp;
+    if (GET_ALLOC(HDRP(bp)))
+	printf("%d\n", my_class(size));
+    //if (my_class(size) == 16)
+//	printf("%d\n", GET_SIZE(HDRP(bp)));
 }
 
-static void *out_class(void *bp)
+static void out_class(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
-    char *class = (char *)find_class(my_class(size));
-
+    char *class = find_class(my_class(size));
     char *curr;
+
     for (curr = class; curr != NULL;
-		    curr = (char *)(*(size_t *)curr)) {
+			curr = (char *)(*(size_t *)curr)) {
+	if (GET_ALLOC(HDRP(curr)))
+	    printf("%d\n", my_class(size));
 	if ((char *)(*(size_t *)curr) == bp) {
 	    *(size_t *)curr = *(size_t *)bp;
 	    *(size_t *)bp = 0;
-	    break;
+	    //break;
 	}
     }
-    return bp;
 }
 
 static void *coalesce(void *bp)
@@ -293,12 +311,12 @@ static void *find_fit(size_t asize)
     int flag = 0;
     int cls = my_class(asize);
     char *class = find_class(cls);
-
-    while (cls < 12 || flag == 0) {
-	if (class) {
-	    for (bp = class; *(size_t *)bp > 0; 
-			    bp = (char *)(*(size_t *)bp)) {
-		if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    
+    while (cls < 17 || flag == 0) {
+	if (*(size_t *)class) {
+	    for (bp = (char *)(*(size_t *)class); bp != NULL;
+				    bp = (char *)(*(size_t *)bp)) {
+		if (asize <= GET_SIZE(HDRP(bp))) {
 		    return bp;
 		}
 	    }
@@ -312,13 +330,16 @@ static void *find_fit(size_t asize)
 	if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
 	    return bp;
 	}
-    } */
+    }*/
     return NULL; /* No fit */
 }
 
 static void place(void *bp, size_t asize)
 {
     size_t csize = GET_SIZE(HDRP(bp));
+    if (GET_ALLOC(HDRP(bp)))
+	printf("hi\n");
+    out_class(bp);
 
     if ((csize - asize) >= (2*DSIZE)) {
 	PUT(HDRP(bp), PACK(asize, 1));
@@ -326,6 +347,7 @@ static void place(void *bp, size_t asize)
 	bp = NEXT_BLKP(bp);
 	PUT(HDRP(bp), PACK(csize - asize, 0));
 	PUT(FTRP(bp), PACK(csize - asize, 0));
+	in_class(bp);
     } else {
 	PUT(HDRP(bp), PACK(csize, 1));
 	PUT(FTRP(bp), PACK(csize, 1));
@@ -358,16 +380,44 @@ void *mm_realloc(void *ptr, size_t size)
 {
     void *oldptr = ptr;
     void *newptr;
-    size_t copySize;
+    size_t oldSize;
+    size_t asize;
     
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-    copySize = GET_SIZE(HDRP(oldptr));
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
+    oldSize = GET_SIZE(HDRP(oldptr));
+   
+    if (size == 0) {
+	mm_free(oldptr);
+	return NULL;
+    } else if (size <= DSIZE) {
+	asize = 2*DSIZE;
+    } else {
+	asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
+    }
+
+    if (asize == oldSize) {
+	return oldptr;
+    } else if (asize < oldSize) {
+	//줄이는 경우
+	if (oldSize - asize >= 2 * DSIZE) {
+	    newptr = oldptr;
+	    PUT(HDRP(newptr), PACK(asize, 1));
+	    PUT(FTRP(newptr), PACK(asize, 1));
+
+	    void *bp = NEXT_BLKP(newptr);
+	    PUT(HDRP(bp), PACK(oldSize - asize, 0));
+	    PUT(FTRP(bp), PACK(oldSize - asize, 0));
+	    coalesce(bp);
+	} else {
+	    newptr = oldptr;
+	}
+    } else {
+	//늘리는 경우
+	newptr = mm_malloc(size);
+	if (newptr == NULL)
+	    return NULL;
+	memcpy(newptr, oldptr, oldSize);
+	mm_free(oldptr);
+    }
     return newptr;
 }
 
@@ -375,4 +425,3 @@ int mmcheck()
 {
     return 0;
 }
-
