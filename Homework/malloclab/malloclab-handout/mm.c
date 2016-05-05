@@ -76,7 +76,7 @@ team_t team = {
 #define NEXT_BLKP(bp)	((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp)	((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
-static int find_class(int size)
+static int my_class(size_t size)
 {
     int i = 0;
     double dsize = size / WSIZE;
@@ -88,7 +88,41 @@ static int find_class(int size)
 }
 
 static char *heap_listp;
-static char *class_listp;
+static size_t class2 = 0;
+static size_t class3 = 0;
+static size_t class4 = 0;
+static size_t class5 = 0;
+static size_t class6 = 0;
+static size_t class7 = 0;
+static size_t class8 = 0;
+static size_t class9 = 0;
+static size_t class10 = 0;
+static size_t class11 = 0;
+
+static void *find_class(int class) 
+{
+    switch (class) {
+    case 2:
+	    return &class2;
+    case 3:
+	    return &class3;
+    case 4:
+	    return &class4;
+    case 5:
+	    return &class5;
+    case 6:
+	    return &class6;
+    case 7:
+	    return &class7;
+    case 8:
+	    return &class8;
+    case 9:
+	    return &class9;
+    case 10:
+	    return &class10;
+    }
+    return &class11;
+}
 
 /* 
  * mm_init - initialize the malloc package.
@@ -103,11 +137,10 @@ int mm_init(void)
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
 	return -1;
     PUT(heap_listp, 0);	    /* Alignment padding */
-    PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1));    /* Prologue header */
-    PUT(heap_listp + (3*WSIZE), PACK(DSIZE, 1));    /* Prologue footer */
-    PUT(heap_listp + (4*WSIZE), PACK(0, 1));	    /* Epilogue header */
-    class_listp = heap_listp + (1*WSIZE);
-    heap_listp += (3*WSIZE);
+    PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1));    /* Prologue header */
+    PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1));    /* Prologue footer */
+    PUT(heap_listp + (3*WSIZE), PACK(0, 1));	    /* Epilogue header */
+    heap_listp += (2*WSIZE);
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
@@ -186,6 +219,38 @@ void mm_free(void *ptr)
     coalesce(ptr);
 }
 
+static void *in_class(void *bp) 
+{
+    size_t size = GET_SIZE(HDRP(bp));
+    char *class = (char *)find_class(my_class(size));
+    
+    if (*(size_t *)class) {
+	*(size_t *)bp = *(size_t *)class;
+	*(size_t *)class = (size_t)bp;
+    } else {
+	*(size_t *)class = (size_t)bp;
+	*(size_t *)bp = 0;
+    }
+    return bp;
+}
+
+static void *out_class(void *bp)
+{
+    size_t size = GET_SIZE(HDRP(bp));
+    char *class = (char *)find_class(my_class(size));
+
+    char *curr;
+    for (curr = class; curr != NULL;
+		    curr = (char *)(*(size_t *)curr)) {
+	if ((char *)(*(size_t *)curr) == bp) {
+	    *(size_t *)curr = *(size_t *)bp;
+	    *(size_t *)bp = 0;
+	    break;
+	}
+    }
+    return bp;
+}
+
 static void *coalesce(void *bp)
 {
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
@@ -193,26 +258,31 @@ static void *coalesce(void *bp)
     size_t size = GET_SIZE(HDRP(bp));
 
     if (prev_alloc && next_alloc) {		/* Case 1 */
+	in_class(bp);
 	return bp;
     } else if (prev_alloc && !next_alloc) {	/* Case 2 */
+	out_class(NEXT_BLKP(bp));
 	size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
 	PUT(HDRP(bp), PACK(size, 0));
 	PUT(FTRP(bp), PACK(size, 0));
+	in_class(bp);
     } else if (!prev_alloc && next_alloc) {	/* Case 3 */
+	out_class(PREV_BLKP(bp));
 	size += GET_SIZE(HDRP(PREV_BLKP(bp)));
 	PUT(FTRP(bp), PACK(size, 0));
 	PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
 	bp = PREV_BLKP(bp);
+	in_class(bp);
     } else {					/* Case 4 */
+	out_class(NEXT_BLKP(bp));
+	out_class(PREV_BLKP(bp));
 	size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
 		GET_SIZE(FTRP(NEXT_BLKP(bp)));
 	PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
 	PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
 	bp = PREV_BLKP(bp);
+	in_class(bp);
     }
-
-    int class = find_class(GET_SIZE(HDRP(bp)));
-
     return bp;
 }
 
@@ -220,12 +290,29 @@ static void *find_fit(size_t asize)
 {
     /* First fit search */
     void *bp;
+    int flag = 0;
+    int cls = my_class(asize);
+    char *class = find_class(cls);
 
+    while (cls < 12 || flag == 0) {
+	if (class) {
+	    for (bp = class; *(size_t *)bp > 0; 
+			    bp = (char *)(*(size_t *)bp)) {
+		if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+		    return bp;
+		}
+	    }
+	}
+	flag = 1;
+	cls++;
+	class = find_class(cls);
+    }
+    /*
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
 	if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
 	    return bp;
 	}
-    }
+    } */
     return NULL; /* No fit */
 }
 
