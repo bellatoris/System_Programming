@@ -22,6 +22,7 @@ static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
+static void is_in_class(void *bp);
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
@@ -219,6 +220,9 @@ void *mm_malloc(size_t size)
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
 	return NULL;
+    if (GET_ALLOC(HDRP(bp))) {
+	printf("extend\n");
+    }
     place(bp, asize);
     return bp;
 }
@@ -232,7 +236,6 @@ void *mm_malloc(size_t size)
 void mm_free(void *ptr)
 {
     size_t size = GET_SIZE(HDRP(ptr));
-
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
     coalesce(ptr);
@@ -243,12 +246,19 @@ static void in_class(void *bp)
     size_t size = GET_SIZE(HDRP(bp));
     char *class = find_class(my_class(size));
 
-    *(size_t *)bp = *(size_t *)class;
-    *(size_t *)class = (size_t)bp;
     if (GET_ALLOC(HDRP(bp)))
-	printf("%d\n", my_class(size));
-    //if (my_class(size) == 16)
-//	printf("%d\n", GET_SIZE(HDRP(bp)));
+	printf("in class bp is ALLOC %d\n", my_class(size));
+
+    if (*(size_t *)class == 0) {
+	*(size_t *)bp = 0;
+	*(size_t *)class = (size_t)bp;
+    } else {
+	*(size_t *)bp = *(size_t *)class;
+	*(size_t *)class = (size_t)bp;
+    }
+     if (*(size_t *)class && GET_ALLOC(HDRP((char *)(*(size_t *)class)))) {
+	printf("in class class is ALLOC %d\n", my_class(size));
+    }   
 }
 
 static void out_class(void *bp)
@@ -259,14 +269,28 @@ static void out_class(void *bp)
 
     for (curr = class; curr != NULL;
 			curr = (char *)(*(size_t *)curr)) {
-	if (GET_ALLOC(HDRP(curr)))
-	    printf("%d\n", my_class(size));
 	if ((char *)(*(size_t *)curr) == bp) {
 	    *(size_t *)curr = *(size_t *)bp;
 	    *(size_t *)bp = 0;
-	    //break;
+	    return;
 	}
     }
+}
+
+static void is_in_class(void *bp)
+{
+    size_t size = GET_SIZE(HDRP(bp));
+    char *class = find_class(my_class(size));
+    char *curr;
+    
+    for (curr = class; curr != NULL;
+			curr = (char *)(*(size_t *)curr)) {
+	if ((char *)(*(size_t *)curr) == bp) {
+	    printf("yes\n");
+	    return;
+	}
+    }
+    printf("no\n");
 }
 
 static void *coalesce(void *bp)
@@ -277,7 +301,6 @@ static void *coalesce(void *bp)
 
     if (prev_alloc && next_alloc) {		/* Case 1 */
 	in_class(bp);
-	return bp;
     } else if (prev_alloc && !next_alloc) {	/* Case 2 */
 	out_class(NEXT_BLKP(bp));
 	size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
@@ -301,6 +324,9 @@ static void *coalesce(void *bp)
 	bp = PREV_BLKP(bp);
 	in_class(bp);
     }
+    if (GET_ALLOC(HDRP(bp))) {
+	printf("coalese\n");
+    }
     return bp;
 }
 
@@ -313,34 +339,23 @@ static void *find_fit(size_t asize)
     char *class = find_class(cls);
     
     while (cls < 17 || flag == 0) {
-	if (*(size_t *)class) {
-	    for (bp = (char *)(*(size_t *)class); bp != NULL;
-				    bp = (char *)(*(size_t *)bp)) {
-		if (asize <= GET_SIZE(HDRP(bp))) {
-		    return bp;
-		}
-	    }
+	for (bp = class; bp != NULL; bp = (char *)(*(size_t *)bp)) {
+		if (*(size_t *)bp && asize <= GET_SIZE(HDRP((char *)(*(size_t *)bp))))
+		    return (char *)(*(size_t *)bp);
 	}
 	flag = 1;
 	cls++;
 	class = find_class(cls);
     }
-    /*
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-	if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-	    return bp;
-	}
-    }*/
     return NULL; /* No fit */
 }
 
+
+/* in_class out_class통과 */
 static void place(void *bp, size_t asize)
 {
     size_t csize = GET_SIZE(HDRP(bp));
-    if (GET_ALLOC(HDRP(bp)))
-	printf("hi\n");
     out_class(bp);
-
     if ((csize - asize) >= (2*DSIZE)) {
 	PUT(HDRP(bp), PACK(asize, 1));
 	PUT(FTRP(bp), PACK(asize, 1));
