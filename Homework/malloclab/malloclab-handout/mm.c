@@ -462,6 +462,7 @@ static void *find_fit(size_t asize)
 /* in_class out_class통과 */
 static void place(void *bp, size_t asize)
 {
+    free(malloc(1));
     size_t csize = GET_SIZE(HDRP(bp));
     out_class(bp);
     if ((csize - asize) >= (2*DSIZE)) {
