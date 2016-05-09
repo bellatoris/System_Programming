@@ -1,13 +1,7 @@
 /*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
+ * Name: 민두기
+ * Student ID: 2012-11598
  * 
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free.
- *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,17 +13,19 @@
 #include "memlib.h"
 
 
-static int  my_class(size_t size);
-static void *find_class(int class);
-static void init_class(void);
-static void in_class(void *bp);
-static void out_class(void *bp);
-static int  is_in_class(void *bp);
-static void traverse_class(void);
-static void *extend_heap(size_t words);
-static void *coalesce(void *bp);
-static void *find_fit(size_t asize);
-static void place(void *bp, size_t asize);
+static int	my_class(size_t size);
+static void	*find_class(int class);
+static void	init_class(void);
+static void	in_class(void *bp);
+static void	out_class(void *bp);
+static int	is_in_class(void *bp);
+static void	traverse_class(void);
+static size_t	get_asize(size_t size);
+static void	*extend_heap(size_t words);
+static void	*coalesce(void *bp);
+static void	*find_fit(size_t asize);
+static void	place(void *bp, size_t asize);
+
 int mm_check(void);
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
@@ -96,8 +92,6 @@ static size_t class14 = 0;
 static size_t class15 = 0;
 static size_t class16 = 0;
 
-
-
 /* 
  * mm_init - initialize the malloc package.
  * such as allocating the initial heap area.
@@ -123,7 +117,6 @@ int mm_init(void)
     return 0;
 }
 
-
 /* 
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *	Always allocate a block whose size is a multiple of the alignment.
@@ -142,16 +135,11 @@ void *mm_malloc(size_t size)
 	return NULL;
 
     /* Adjust block size to include overhead and alignment reqs. */
-    if (size <= DSIZE)
-	asize = 2*DSIZE;
-    else
-	asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
+    asize = get_asize(size);
 
-//    printf("malloc size: %d\n", asize);
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
 	place(bp, asize);
-//        printf("heapsize: %d\n", mem_heapsize());
 	return bp;
     }
 
@@ -167,9 +155,7 @@ void *mm_malloc(size_t size)
 
     if (!bp)
 	return NULL;
-
     place(bp, asize);
-//    printf("heapsize: %d\n", mem_heapsize());
 
     return bp;
 }
@@ -183,12 +169,10 @@ void *mm_malloc(size_t size)
 void mm_free(void *ptr)
 {
     size_t size = GET_SIZE(HDRP(ptr));
-//    printf("free size: %d\n", size);
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
     coalesce(ptr);
 }
-
 
 /*
  * mm_realloc - The mm_realloc routine returns a pointer to an allocated
@@ -207,27 +191,22 @@ void *mm_realloc(void *ptr, size_t size)
     void *newptr;
     size_t oldsize;
     size_t asize;
-    size_t temp;
-    
-    oldsize = GET_SIZE(HDRP(oldptr));
   
     if (size == 0) {
 	mm_free(oldptr);
 	return NULL;
-    } else if (size <= DSIZE) {
-	asize = 2*DSIZE;
-    } else {
-	asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
     }
 
-//    printf("asize: %d\n", asize);
-   // traverse_class();
+    oldsize = GET_SIZE(HDRP(oldptr));
+    asize = get_asize(size);
+
     if (asize < oldsize) {
 	//줄이는 경우
 	newptr = oldptr;
 	if (oldsize - asize >= 2 * DSIZE) {
 	    PUT(HDRP(newptr), PACK(asize, 1));
 	    PUT(FTRP(newptr), PACK(asize, 1));
+
 	    void *bp = NEXT_BLKP(newptr);
 	    PUT(HDRP(bp), PACK(oldsize - asize, 0));
 	    PUT(FTRP(bp), PACK(oldsize - asize, 0));
@@ -235,10 +214,10 @@ void *mm_realloc(void *ptr, size_t size)
 	}
     } else if (asize > oldsize) {
 	//늘리는 경우
-	temp = *(size_t *)oldptr;
+	size_t temp = *(size_t *)oldptr;
 	if (!GET_ALLOC(HDRP(PREV_BLKP(oldptr)))) {
 	    if (!GET_SIZE(HDRP(NEXT_BLKP(oldptr)))) {
-		char *bp =  extend_heap((asize - oldsize)/WSIZE);
+		void *bp =  extend_heap((asize - oldsize)/WSIZE);
 		if (!bp)
 		    return NULL;
 		out_class(bp);
@@ -390,6 +369,19 @@ static void traverse_class()
 	}
 	printf("\n");
     }
+}
+
+static size_t get_asize(size_t size) 
+{
+    size_t asize;
+
+    if (size <= DSIZE) {
+	asize = 2*DSIZE;
+    } else {
+	asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
+    }
+    
+    return asize;
 }
 
 static void *extend_heap(size_t words)
