@@ -22,7 +22,8 @@ static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
-static void is_in_class(void *bp);
+static int  is_in_class(void *bp);
+int mm_check(void);
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
@@ -70,12 +71,12 @@ team_t team = {
 /* Given block ptr bp, compute address of its header and footer */
 #define HDRP(bp)	((char *)(bp) - WSIZE)
 #define FTRP(bp)	((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
-#define NEXT(bp)	((char *)(bp))
-#define PREV(bp)	((char *)(bp) + WSIZE)
 
 /* Given block ptr bp, compute address of next and previous blocks */
 #define NEXT_BLKP(bp)	((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp)	((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
+
+#define NEXT_CLASS(bp)	((char *)(*(size_t *)(bp)))
 
 static int my_class(size_t size)
 {
@@ -220,9 +221,6 @@ void *mm_malloc(size_t size)
     extendsize = MAX(asize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
 	return NULL;
-    if (GET_ALLOC(HDRP(bp))) {
-	printf("extend\n");
-    }
     place(bp, asize);
     return bp;
 }
@@ -238,6 +236,7 @@ void mm_free(void *ptr)
     size_t size = GET_SIZE(HDRP(ptr));
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
+    *(size_t *)ptr = 0;
     coalesce(ptr);
 }
 
@@ -246,19 +245,8 @@ static void in_class(void *bp)
     size_t size = GET_SIZE(HDRP(bp));
     char *class = find_class(my_class(size));
 
-    if (GET_ALLOC(HDRP(bp)))
-	printf("in class bp is ALLOC %d\n", my_class(size));
-
-    if (*(size_t *)class == 0) {
-	*(size_t *)bp = 0;
-	*(size_t *)class = (size_t)bp;
-    } else {
-	*(size_t *)bp = *(size_t *)class;
-	*(size_t *)class = (size_t)bp;
-    }
-     if (*(size_t *)class && GET_ALLOC(HDRP((char *)(*(size_t *)class)))) {
-	printf("in class class is ALLOC %d\n", my_class(size));
-    }   
+    *(size_t *)bp = *(size_t *)class;
+    *(size_t *)class = (size_t)bp;
 }
 
 static void out_class(void *bp)
@@ -267,30 +255,29 @@ static void out_class(void *bp)
     char *class = find_class(my_class(size));
     char *curr;
 
-    for (curr = class; curr != NULL;
-			curr = (char *)(*(size_t *)curr)) {
-	if ((char *)(*(size_t *)curr) == bp) {
-	    *(size_t *)curr = *(size_t *)bp;
+    for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
+	if (NEXT_CLASS(curr) == bp) {
+	    *(size_t *)curr = *(size_t *)NEXT_CLASS(curr);
 	    *(size_t *)bp = 0;
 	    return;
 	}
     }
 }
 
-static void is_in_class(void *bp)
+static int is_in_class(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
     char *class = find_class(my_class(size));
     char *curr;
     
-    for (curr = class; curr != NULL;
-			curr = (char *)(*(size_t *)curr)) {
-	if ((char *)(*(size_t *)curr) == bp) {
+    for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
+	if (NEXT_CLASS(curr) == bp) {
 	    printf("yes\n");
-	    return;
+	    return 1;
 	}
     }
     printf("no\n");
+    return 0;
 }
 
 static void *coalesce(void *bp)
@@ -300,20 +287,18 @@ static void *coalesce(void *bp)
     size_t size = GET_SIZE(HDRP(bp));
 
     if (prev_alloc && next_alloc) {		/* Case 1 */
-	in_class(bp);
+	;
     } else if (prev_alloc && !next_alloc) {	/* Case 2 */
 	out_class(NEXT_BLKP(bp));
 	size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
 	PUT(HDRP(bp), PACK(size, 0));
 	PUT(FTRP(bp), PACK(size, 0));
-	in_class(bp);
     } else if (!prev_alloc && next_alloc) {	/* Case 3 */
 	out_class(PREV_BLKP(bp));
 	size += GET_SIZE(HDRP(PREV_BLKP(bp)));
 	PUT(FTRP(bp), PACK(size, 0));
 	PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
 	bp = PREV_BLKP(bp);
-	in_class(bp);
     } else {					/* Case 4 */
 	out_class(NEXT_BLKP(bp));
 	out_class(PREV_BLKP(bp));
@@ -322,11 +307,9 @@ static void *coalesce(void *bp)
 	PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
 	PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
 	bp = PREV_BLKP(bp);
-	in_class(bp);
     }
-    if (GET_ALLOC(HDRP(bp))) {
-	printf("coalese\n");
-    }
+    in_class(bp);
+
     return bp;
 }
 
@@ -339,9 +322,19 @@ static void *find_fit(size_t asize)
     char *class = find_class(cls);
     
     while (cls < 17 || flag == 0) {
-	for (bp = class; bp != NULL; bp = (char *)(*(size_t *)bp)) {
-		if (*(size_t *)bp && asize <= GET_SIZE(HDRP((char *)(*(size_t *)bp))))
-		    return (char *)(*(size_t *)bp);
+	for (bp = class; bp != NULL; bp = NEXT_CLASS(bp)) {
+		if (*(size_t *)bp && asize <= GET_SIZE(HDRP(NEXT_CLASS(bp)))) {
+		    if (!is_in_class(NEXT_CLASS(bp))) {
+			printf("asize: %d\n", asize);
+			printf("size: %d\n", GET_SIZE(HDRP(NEXT_CLASS(bp))));
+			printf("cls: %d\n", cls);
+			printf("bp class: %d\n", my_class(GET_SIZE(HDRP(NEXT_CLASS(bp)))));
+			mm_check();
+			printf("class: %p\n", class);
+			printf("bp: %p\n", NEXT_CLASS(bp));
+		    }
+		    return NEXT_CLASS(bp);
+		}
 	}
 	flag = 1;
 	cls++;
@@ -360,8 +353,10 @@ static void place(void *bp, size_t asize)
 	PUT(HDRP(bp), PACK(asize, 1));
 	PUT(FTRP(bp), PACK(asize, 1));
 	bp = NEXT_BLKP(bp);
+	*(size_t *)bp = 0;
 	PUT(HDRP(bp), PACK(csize - asize, 0));
 	PUT(FTRP(bp), PACK(csize - asize, 0));
+	printf("place bp: %p\n", bp);
 	in_class(bp);
     } else {
 	PUT(HDRP(bp), PACK(csize, 1));
@@ -377,19 +372,7 @@ static void place(void *bp, size_t asize)
  *	    - if ptr is not NULL, it must have been returned by an earlier call
  *	      to  mm_malloc or mm_realloc. The call to mm_realloc changes the 
  *	      size of the memory block pointed to by ptr (the old block) to size
- *	      bytes and retuns the address of the new block. Notice that the 
- *	      address of the new block might be the same as the old block, or it
- *	      might be different, depending on your implementation, the amount of 
- *	      internal fragmentation in the old block, and the size of the realloc
- *	      request.
- *	      The contents of the new block are same as those of the old ptr block,
- *	      up to the minimum of the old and new sizes. Everyting else is 
- *	      uninitialized. For example, if the old block is 8 bytes and the new 
- *	      block is 12 bytes, then the first 8 bytes of the new block are identical
- *	      to the first 8 bytes of the old block and the last 4 bytes are 
- *	      unintialized. Similarly, if the old block is 8 bytes and the new block
- *	      is 4 bytes, then the contents of the new blcok are identical to the first
- *	      4 bytes of the old block.
+ *	      bytes and retuns the address of the new block.
  */
 void *mm_realloc(void *ptr, size_t size)
 {
@@ -436,7 +419,23 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
-int mmcheck()
+int mm_check()
 {
+    printf("class1: %p\n", &class1);
+    printf("class2: %p\n", &class2);
+    printf("class3: %p\n", &class3);
+    printf("class4: %p\n", &class4);
+    printf("class5: %p\n", &class5);
+    printf("class6: %p\n", &class6);
+    printf("class7: %p\n", &class7);
+    printf("class8: %p\n", &class8);
+    printf("class9: %p\n", &class9);
+    printf("class10: %p\n", &class10);
+    printf("class11: %p\n", &class11);
+    printf("class12: %p\n", &class12);
+    printf("class13: %p\n", &class13);
+    printf("class14: %p\n", &class14);
+    printf("class15: %p\n", &class15);
+    printf("class16: %p\n", &class16);
     return 0;
 }
