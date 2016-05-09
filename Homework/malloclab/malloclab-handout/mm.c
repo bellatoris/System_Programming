@@ -24,6 +24,7 @@ static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
 static int  is_in_class(void *bp);
 int mm_check(void);
+void traverse_class(void);
 /*********************************************************
  * NOTE TO STUDENTS: Before you do anything else, please
  * provide your team information in the following struct.
@@ -145,6 +146,15 @@ static void *find_class(int class)
     }
 }
 
+static void init_class(void)
+{
+    int i;
+    for (i = 1; i < 17; i++) {
+	char *class = find_class(i);
+	*(size_t *)class = 0;
+    }
+}
+
 /* 
  * mm_init - initialize the malloc package.
  * such as allocating the initial heap area.
@@ -154,6 +164,7 @@ static void *find_class(int class)
  */
 int mm_init(void)
 {
+    init_class();
     /* Create the initial empty heap */
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
 	return -1;
@@ -211,17 +222,30 @@ void *mm_malloc(size_t size)
     else
 	asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
 
+//    printf("malloc size: %d\n", asize);
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
 	place(bp, asize);
+//        printf("heapsize: %d\n", mem_heapsize());
 	return bp;
     }
 
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize, CHUNKSIZE);
-    if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
+    
+    if (asize > CHUNKSIZE && !GET_ALLOC(((char *)mem_heap_hi() - DSIZE + 1))) {
+	size_t temp = GET_SIZE(((char *)mem_heap_hi() - DSIZE + 1));
+	bp = extend_heap((asize - temp)/WSIZE);
+    } else {
+	bp = extend_heap(extendsize/WSIZE);
+    }
+
+    if (!bp)
 	return NULL;
+
     place(bp, asize);
+//    printf("heapsize: %d\n", mem_heapsize());
+
     return bp;
 }
 
@@ -234,9 +258,9 @@ void *mm_malloc(size_t size)
 void mm_free(void *ptr)
 {
     size_t size = GET_SIZE(HDRP(ptr));
+//    printf("free size: %d\n", size);
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
-    *(size_t *)ptr = 0;
     coalesce(ptr);
 }
 
@@ -258,7 +282,6 @@ static void out_class(void *bp)
     for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
 	if (NEXT_CLASS(curr) == bp) {
 	    *(size_t *)curr = *(size_t *)NEXT_CLASS(curr);
-	    *(size_t *)bp = 0;
 	    return;
 	}
     }
@@ -272,11 +295,9 @@ static int is_in_class(void *bp)
     
     for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
 	if (NEXT_CLASS(curr) == bp) {
-	    printf("yes\n");
 	    return 1;
 	}
     }
-    printf("no\n");
     return 0;
 }
 
@@ -309,7 +330,7 @@ static void *coalesce(void *bp)
 	bp = PREV_BLKP(bp);
     }
     in_class(bp);
-
+    //traverse_class();
     return bp;
 }
 
@@ -324,15 +345,6 @@ static void *find_fit(size_t asize)
     while (cls < 17 || flag == 0) {
 	for (bp = class; bp != NULL; bp = NEXT_CLASS(bp)) {
 		if (*(size_t *)bp && asize <= GET_SIZE(HDRP(NEXT_CLASS(bp)))) {
-		    if (!is_in_class(NEXT_CLASS(bp))) {
-			printf("asize: %d\n", asize);
-			printf("size: %d\n", GET_SIZE(HDRP(NEXT_CLASS(bp))));
-			printf("cls: %d\n", cls);
-			printf("bp class: %d\n", my_class(GET_SIZE(HDRP(NEXT_CLASS(bp)))));
-			mm_check();
-			printf("class: %p\n", class);
-			printf("bp: %p\n", NEXT_CLASS(bp));
-		    }
 		    return NEXT_CLASS(bp);
 		}
 	}
@@ -347,16 +359,15 @@ static void *find_fit(size_t asize)
 /* in_class out_class통과 */
 static void place(void *bp, size_t asize)
 {
+    //traverse_class();
     size_t csize = GET_SIZE(HDRP(bp));
     out_class(bp);
     if ((csize - asize) >= (2*DSIZE)) {
 	PUT(HDRP(bp), PACK(asize, 1));
 	PUT(FTRP(bp), PACK(asize, 1));
 	bp = NEXT_BLKP(bp);
-	*(size_t *)bp = 0;
 	PUT(HDRP(bp), PACK(csize - asize, 0));
 	PUT(FTRP(bp), PACK(csize - asize, 0));
-	printf("place bp: %p\n", bp);
 	in_class(bp);
     } else {
 	PUT(HDRP(bp), PACK(csize, 1));
@@ -378,11 +389,12 @@ void *mm_realloc(void *ptr, size_t size)
 {
     void *oldptr = ptr;
     void *newptr;
-    size_t oldSize;
+    size_t oldsize;
     size_t asize;
+    size_t temp;
     
-    oldSize = GET_SIZE(HDRP(oldptr));
-   
+    oldsize = GET_SIZE(HDRP(oldptr));
+  
     if (size == 0) {
 	mm_free(oldptr);
 	return NULL;
@@ -392,50 +404,75 @@ void *mm_realloc(void *ptr, size_t size)
 	asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
     }
 
-    if (asize == oldSize) {
-	return oldptr;
-    } else if (asize < oldSize) {
+//    printf("asize: %d\n", asize);
+   // traverse_class();
+    if (asize < oldsize) {
 	//줄이는 경우
-	if (oldSize - asize >= 2 * DSIZE) {
-	    newptr = oldptr;
+	newptr = oldptr;
+	if (oldsize - asize >= 2 * DSIZE) {
 	    PUT(HDRP(newptr), PACK(asize, 1));
 	    PUT(FTRP(newptr), PACK(asize, 1));
-
 	    void *bp = NEXT_BLKP(newptr);
-	    PUT(HDRP(bp), PACK(oldSize - asize, 0));
-	    PUT(FTRP(bp), PACK(oldSize - asize, 0));
+	    PUT(HDRP(bp), PACK(oldsize - asize, 0));
+	    PUT(FTRP(bp), PACK(oldsize - asize, 0));
 	    coalesce(bp);
+	}
+//	printf("변동없음\n");
+    } else if (asize > oldsize) {
+	//늘리는 경우
+//	printf("늘리는 경우\n");
+	temp = *(size_t *)oldptr;
+	if (!GET_ALLOC(HDRP(PREV_BLKP(oldptr)))) {
+	    if (GET_ALLOC(HDRP(NEXT_BLKP(oldptr))) &&
+			!GET_SIZE(HDRP(NEXT_BLKP(oldptr)))) {
+		char *bp =  extend_heap((asize - oldsize)/WSIZE);
+		if (!bp)
+		    return NULL;
+		out_class(bp);
+		PUT(HDRP(oldptr), PACK(asize, 1));
+		PUT(FTRP(oldptr), PACK(asize, 1));
+		newptr = oldptr;
+	    } else {
+		if (!(newptr = mm_malloc(size)))
+		    return NULL;
+		memcpy(newptr, oldptr, oldsize - 8);
+		mm_free(oldptr);
+	    }
 	} else {
-	    newptr = oldptr;
+	    mm_free(oldptr);
+	    if (!(newptr = mm_malloc(size)))
+		return NULL;
+	    else if(newptr == oldptr) 
+		*(size_t *)newptr = temp;
+	    else
+		memcpy(newptr, oldptr, oldsize - 8);
+	    *(size_t *)newptr = temp;
 	}
     } else {
-	//늘리는 경우
-	newptr = mm_malloc(size);
-	if (newptr == NULL)
-	    return NULL;
-	memcpy(newptr, oldptr, oldSize);
-	mm_free(oldptr);
+	newptr = oldptr;
+//	printf("변동없음\n");
     }
     return newptr;
 }
 
 int mm_check()
 {
-    printf("class1: %p\n", &class1);
-    printf("class2: %p\n", &class2);
-    printf("class3: %p\n", &class3);
-    printf("class4: %p\n", &class4);
-    printf("class5: %p\n", &class5);
-    printf("class6: %p\n", &class6);
-    printf("class7: %p\n", &class7);
-    printf("class8: %p\n", &class8);
-    printf("class9: %p\n", &class9);
-    printf("class10: %p\n", &class10);
-    printf("class11: %p\n", &class11);
-    printf("class12: %p\n", &class12);
-    printf("class13: %p\n", &class13);
-    printf("class14: %p\n", &class14);
-    printf("class15: %p\n", &class15);
-    printf("class16: %p\n", &class16);
     return 0;
+}
+
+void traverse_class()
+{
+    char *curr;
+    int i;
+
+    for (i = 1; i < 17; i++) {
+	char *class = find_class(i);
+	printf("class%d: ", i);
+	for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
+	    printf("%p  ", NEXT_CLASS(curr));
+	    if (*(size_t *)curr)
+		printf("size %d  ", GET_SIZE(HDRP(NEXT_CLASS(curr))));
+	}
+	printf("\n");
+    }
 }
