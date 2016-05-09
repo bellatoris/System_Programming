@@ -48,7 +48,19 @@
 #include "mm.h"
 #include "memlib.h"
 
-student_t student = { "Hyeon Kim", "2013-11392" };
+team_t team = {
+    /* Team name */
+    "두기의 팀",
+    /* First member's full name */
+    "민두기",
+    /* First member's email address */
+    "bellatoris@snu.ac.kr",
+    /* Second member's full name (leave blank if none) */
+    "",
+    /* Second member's email address (leave blank if none) */
+    ""
+};
+
 
 
 //
