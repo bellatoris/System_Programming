@@ -24,7 +24,7 @@ static size_t	get_asize(size_t size);
 static void	*extend_heap(size_t words);
 static void	*coalesce(void *bp);
 static void	*find_fit(size_t asize);
-static void	place(void *bp, size_t asize);
+static void	*place(void *bp, size_t asize);
 
 int mm_check(void);
 /*********************************************************
@@ -72,7 +72,7 @@ team_t team = {
 
 #define NEXT_CLASS(bp)	((char *)(*(size_t *)(bp)))
 
-#define CLASS 16
+#define CLASS 20
 
 static char *heap_listp;
 static size_t class1 = 0;
@@ -91,6 +91,10 @@ static size_t class13 = 0;
 static size_t class14 = 0;
 static size_t class15 = 0;
 static size_t class16 = 0;
+static size_t class17 = 0;
+static size_t class18 = 0;
+static size_t class19 = 0;
+static size_t class20 = 0;
 
 /* 
  * mm_init - initialize the malloc package.
@@ -139,7 +143,7 @@ void *mm_malloc(size_t size)
 
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
-	place(bp, asize);
+	bp = place(bp, asize);
 	return bp;
     }
 
@@ -155,7 +159,7 @@ void *mm_malloc(size_t size)
 
     if (!bp)
 	return NULL;
-    place(bp, asize);
+    bp = place(bp, asize);
 
     return bp;
 }
@@ -216,6 +220,19 @@ void *mm_realloc(void *ptr, size_t size)
 	//늘리는 경우
 	size_t temp = *(size_t *)oldptr;
 	if (!GET_ALLOC(HDRP(PREV_BLKP(oldptr)))) {
+	   /* void *pbp = PREV_BLKP(oldptr);
+	    size_t tsize = GET_SIZE(HDRP(pbp)) + oldsize;
+	    out_class(pbp);
+	    memmove(pbp, oldptr, oldsize - DSIZE);
+	    PUT(HDRP(pbp), PACK(tsize, 1));
+	    PUT(FTRP(pbp), PACK(tsize, 1));
+	    
+	    mm_free(pbp);
+	    newptr = mm_malloc(size);
+	    if (newptr != pbp)
+		memcpy(newptr, pbp, oldsize - DSIZE);
+	    *(size_t *)newptr = temp;*/
+	    
 	    if (!GET_SIZE(HDRP(NEXT_BLKP(oldptr)))) {
 		void *bp =  extend_heap((asize - oldsize)/WSIZE);
 		if (!bp)
@@ -229,7 +246,7 @@ void *mm_realloc(void *ptr, size_t size)
 		    return NULL;
 		memcpy(newptr, oldptr, oldsize - DSIZE);
 		mm_free(oldptr);
-	    }
+	    }	
 	} else {
 	    mm_free(oldptr);
 	    if (!(newptr = mm_malloc(size)))
@@ -303,8 +320,16 @@ static void *find_class(int class)
 	    return &class14;
     case 15:
 	    return &class15;
-    default:
+    case 16:
 	    return &class16;
+    case 17:
+	    return &class17;
+    case 18:
+	    return &class18;
+    case 19:
+	    return &class19;
+    default:
+	    return &class20;
     }
 }
 
@@ -321,9 +346,16 @@ static void in_class(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
     char *class = find_class(my_class(size));
+    char *curr;
 
-    *(size_t *)bp = *(size_t *)class;
-    *(size_t *)class = (size_t)bp;
+    for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
+//	if (*(size_t *)curr == 0 || size < GET_SIZE(HDRP(NEXT_CLASS(curr)))) {
+	if (*(size_t *)curr == 0 || (size_t)bp < (size_t)NEXT_CLASS(curr)) {
+	    *(size_t *)bp = *(size_t *)curr;
+	    *(size_t *)curr = (size_t)bp;
+	    break;
+	}
+    }
 }
 
 static void out_class(void *bp)
@@ -460,20 +492,32 @@ static void *find_fit(size_t asize)
 
 
 /* in_class out_class통과 */
-static void place(void *bp, size_t asize)
+static void *place(void *bp, size_t asize)
 {
-    free(malloc(1));
     size_t csize = GET_SIZE(HDRP(bp));
+    size_t rsize = csize - asize;
     out_class(bp);
-    if ((csize - asize) >= (2*DSIZE)) {
-	PUT(HDRP(bp), PACK(asize, 1));
-	PUT(FTRP(bp), PACK(asize, 1));
-	bp = NEXT_BLKP(bp);
-	PUT(HDRP(bp), PACK(csize - asize, 0));
-	PUT(FTRP(bp), PACK(csize - asize, 0));
-	in_class(bp);
+
+    if (rsize >= 2 * DSIZE) {
+	if (asize < 100) {
+	    PUT(HDRP(bp), PACK(rsize, 0));
+	    PUT(FTRP(bp), PACK(rsize, 0));
+	    PUT(HDRP(NEXT_BLKP(bp)), PACK(asize, 1));
+	    PUT(FTRP(NEXT_BLKP(bp)), PACK(asize, 1));
+	    in_class(bp);
+	    bp = NEXT_BLKP(bp);
+	} else  {
+	    PUT(HDRP(bp), PACK(asize, 1));
+	    PUT(FTRP(bp), PACK(asize, 1));
+	    bp = NEXT_BLKP(bp);
+	    PUT(HDRP(bp), PACK(csize - asize, 0));
+	    PUT(FTRP(bp), PACK(csize - asize, 0));
+	    in_class(bp);
+	    bp = PREV_BLKP(bp);
+	}
     } else {
 	PUT(HDRP(bp), PACK(csize, 1));
 	PUT(FTRP(bp), PACK(csize, 1));
     }
+    return bp;
 }
