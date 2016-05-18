@@ -291,7 +291,7 @@ void *mm_realloc(void *ptr, size_t size)
 int mm_check()
 {
     char *curr = heap_listp;
-    while (curr != (char*)mem_heap_hi() - 3) {
+    while (GET_SIZE(NEXT_BLKP(curr))) {
 	if (!GET_ALLOC(HDRP(curr))) {
 	    is_in_class(curr);	    
 	}
