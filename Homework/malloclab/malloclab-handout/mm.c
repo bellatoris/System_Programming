@@ -329,6 +329,8 @@ static int my_class(size_t size)
 	i++;
 	dsize = dsize / 2;
     }
+    if (i > CLASS)
+	i = CLASS;
     return i;
 }
 
@@ -466,6 +468,7 @@ static void traverse_class()
 		}
 
 		if (i != my_class(GET_SIZE(HDRP(NEXT_CLASS(curr))))) {
+		    printf("i: %d my_class: %d \n", i, my_class(GET_SIZE(HDRP(NEXT_CLASS(curr)))));
 		    printf("this block is in wrong class\n");
 		}
 	    }
