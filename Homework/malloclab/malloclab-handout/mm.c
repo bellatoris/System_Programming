@@ -288,10 +288,16 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
+/*
+ * mm_check - heap 전체를 traverse하면서 free block이 class list안에 
+ *	    있는지 check한다. 현재 block이 next block의 범위를 침범 하지 
+ *	    않았나 check한다. Class list를 검사하는 traverse_class()를 
+ *	    부른다.
+ */
 int mm_check()
 {
     char *curr = heap_listp;
-    while (GET_SIZE(NEXT_BLKP(curr))) {
+    while (GET_SIZE(HDRP(NEXT_BLKP(curr)))) {
 	if (!GET_ALLOC(HDRP(curr))) {
 	    is_in_class(curr);	    
 	}
@@ -414,7 +420,9 @@ static void out_class(void *bp)
 	}
     }
 }
-
+/*
+ * is_in_class - block ptr가 알맞은 class안에 존재하는지 check한다.
+ */
 static void is_in_class(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
@@ -430,7 +438,9 @@ static void is_in_class(void *bp)
 }
 
 /*
- * traverse_class - 모든 class를 순회한다.
+ * traverse_class - 모든 class를 순회하면서 coalescing이 잘되었는지,
+ *		    혹은 allocated block이 class list에 존재하는지,
+ *		    pointer가 valid한지, 맞는 class있는지 check한다.
  */
 static void traverse_class()
 {
