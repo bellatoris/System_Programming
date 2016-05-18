@@ -38,6 +38,7 @@ static void	*find_class(int class);
 static void	init_class(void);
 static void	in_class(void *bp);
 static void	out_class(void *bp);
+static void	is_in_class(void bp);
 static void	traverse_class(void);
 static size_t	get_asize(size_t size);
 static void	*extend_heap(size_t words);
@@ -289,7 +290,13 @@ void *mm_realloc(void *ptr, size_t size)
 
 int mm_check()
 {
-
+    char *curr = heap_listp;
+    while (curr != (char*)mem_heap_hi() - 3) {
+	if (!GET_ALLOC(HDRP(curr))) {
+	    
+	}
+	curr = NEXT_BLKP(curr);
+    }
     return 0;
 }
 
@@ -400,6 +407,20 @@ static void out_class(void *bp)
 	    return;
 	}
     }
+}
+
+static void is_in_class(void *bp)
+{
+    size_t size = GET_SIZE(HDRP(bp));
+    char *class = find_class(my_class(size));
+    char *curr;
+
+    for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
+	if (NEXT_CLASS(curr) == bp) {
+	    return;
+	}
+    }
+    printf("this block is not in the class list\n");
 }
 
 /*
