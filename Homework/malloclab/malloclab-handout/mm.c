@@ -38,7 +38,7 @@ static void	*find_class(int class);
 static void	init_class(void);
 static void	in_class(void *bp);
 static void	out_class(void *bp);
-static void	is_in_class(void bp);
+static void	is_in_class(void *bp);
 static void	traverse_class(void);
 static size_t	get_asize(size_t size);
 static void	*extend_heap(size_t words);
@@ -293,10 +293,16 @@ int mm_check()
     char *curr = heap_listp;
     while (curr != (char*)mem_heap_hi() - 3) {
 	if (!GET_ALLOC(HDRP(curr))) {
-	    
+	    is_in_class(curr);	    
+	}
+	
+	if ((size_t)HDRP(curr) + GET_SIZE(HDRP(curr)) > 
+			    (size_t)HDRP(NEXT_BLKP(curr))) {
+	    printf("this block overlays next block\n");
 	}
 	curr = NEXT_BLKP(curr);
     }
+    traverse_class();
     return 0;
 }
 
@@ -595,6 +601,6 @@ static void *place(void *bp, size_t asize)
 	PUT(HDRP(bp), PACK(csize, 1));
 	PUT(FTRP(bp), PACK(csize, 1));
     }
-    traverse_class();
+    mm_check();
     return bp;
 }
