@@ -1,7 +1,27 @@
 /*
  * Name: 민두기
  * Student ID: 2012-11598
- * 
+ *
+ * Segregated list로 구현하였으며 각 class는 address-order로 정렬
+ * 되어 있다. n-th class는 2^n 부터 2^(n+1)-1 word를 가지고 있는 
+ * block을 담을 수 있다. 각각의 class들의 header를 위해 15개의size_t를
+ * global하게 정의하였다. (array를 사용할 수 없게 되어있어서 하나 하나 
+ * 정의했다, 그냥 array를 사용할 수 있게 해주는게 훨씬 깔끔한 구현이 
+ * 되었을텐데 이러한 제약을 둔것이 아쉬웠다.) word_size-order로 list를 
+ * 정렬했다면 first-fit을 best-fit으로 만들 수 있겠지만, address-order로
+ * 구현 하는것이 reallocation시에 memory utilization을 더 좋게 할 수 
+ * 있었다. memory allocate시 byte를 받아와 어느 class에 들어가야 할지 
+ * 계산한 후 그 class를 traverse하면서 size보다 큰 첫번째 free block을
+ * (first-fit)을 찾아 할당해준다. 현재 class에 없다면 다음 class로 가고
+ * 모든 class에서 맞는 크기를 찾을 수 없다면 heap size를 extend하여
+ * 할당해준다.
+ *
+ * 각각의 block은 4-byte header와 4-byte footer를 가지고 있다. 기본적인 
+ * 구현이나 매크로는 교과서를 참고하였다. header와 footer에는 현재 block의
+ * 전체 size와 그 block이 allocation되어 있는지 free block인지의 정보를
+ * 담아 둔다.
+ *
+ * 함수에 대한 설명은 함수 위쪽에 적어 두었습니다.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +38,6 @@ static void	*find_class(int class);
 static void	init_class(void);
 static void	in_class(void *bp);
 static void	out_class(void *bp);
-static int	is_in_class(void *bp);
 static void	traverse_class(void);
 static size_t	get_asize(size_t size);
 static void	*extend_heap(size_t words);
@@ -70,12 +89,13 @@ team_t team = {
 #define NEXT_BLKP(bp)	((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp)	((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
+/* Given block ptr bp, compute address of next free blocks */
 #define NEXT_CLASS(bp)	((char *)(*(size_t *)(bp)))
 
-#define CLASS 20
+#define CLASS 16	/* Number of class */
 
 static char *heap_listp;
-static size_t class1 = 0;
+//static size_t class1 = 0;
 static size_t class2 = 0;
 static size_t class3 = 0;
 static size_t class4 = 0;
@@ -91,20 +111,18 @@ static size_t class13 = 0;
 static size_t class14 = 0;
 static size_t class15 = 0;
 static size_t class16 = 0;
-static size_t class17 = 0;
-static size_t class18 = 0;
-static size_t class19 = 0;
-static size_t class20 = 0;
+
 
 /* 
  * mm_init - initialize the malloc package.
  * such as allocating the initial heap area.
- * The return value should be -1 if there was
+ * The return value is -1 if there was
  * problem in performiing the initialization, 
  * 0 otherwise.
  */
 int mm_init(void)
 {
+    /* Initialize list header */
     init_class();
     /* Create the initial empty heap */
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
@@ -149,7 +167,10 @@ void *mm_malloc(size_t size)
 
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize, CHUNKSIZE);
-    
+    /* 만약 heap의 마지막부분이 free block이라면 필요한 size - free block의 size
+     * 만큼만 heap size를 키운다. 이렇게 함으로써 불필요하게 heap size를 늘리는 
+     * 것을 막을 수 있다.
+     */
     if (asize > CHUNKSIZE && !GET_ALLOC(((char *)mem_heap_hi() - DSIZE + 1))) {
 	size_t temp = GET_SIZE(((char *)mem_heap_hi() - DSIZE + 1));
 	bp = extend_heap((asize - temp)/WSIZE);
@@ -169,6 +190,8 @@ void *mm_malloc(size_t size)
  *	It returns nothing. This routine is only guaranteed to work 
  *	when the passed pointer (ptr) was returned by an earlier call
  *	to mm_malloc or mm_realloc and has not yet been freed.
+ *	block의 header와 footer에 free되었다고 표시를 한후 
+ *	coalescing을 한다.
  */
 void mm_free(void *ptr)
 {
@@ -188,6 +211,19 @@ void mm_free(void *ptr)
  *	      to  mm_malloc or mm_realloc. The call to mm_realloc changes the 
  *	      size of the memory block pointed to by ptr (the old block) to size
  *	      bytes and retuns the address of the new block.
+ *	    
+ * realloc의 경우 불필요한 data의 복사나 heap size의 증가를 막기 위해서
+ * case를 나눠서 진행하였다. 우선 크기를 줄이는 경우에는 pointer를 이동하거나
+ * 복사하지 않고 그대로 현재 block size를 줄이기만 했다.
+ * 크기를 늘리는 경우에는 현재 block의 prev block이 free block인지 check 한다.
+ * free block이 아니라면 현재 block을 free한후 다시 늘어난 size 만큼 malloc을
+ * 한다. 이때 현재 block의 next block이 free block이거나, 마지막 block이었다면,
+ * size를 늘리더라도 pointer의 이동은 일어나지 않는다. 그러므로 그대로 return.
+ * 만약 pointer의 이동이 일어났다면, oldptr의 data를 newptr에 복사해준다.
+ * 현재 block의 prev block이 free block이라면 현재 block을 free하는 순간
+ * data를 복사해줘야 하고 memory utilization이 떨어지게 된다. 이 때는 현재
+ * block이 마지막 block이라면, extend heap을 해주고, 그렇지 않다면 그냥
+ * 새로히 mm_malloc을 불러 reallocation 해준다.
  */
 void *mm_realloc(void *ptr, size_t size)
 {
@@ -199,6 +235,9 @@ void *mm_realloc(void *ptr, size_t size)
     if (size == 0) {
 	mm_free(oldptr);
 	return NULL;
+    } else if (!ptr) {
+	oldptr = mm_malloc(size);
+	return oldptr;
     }
 
     oldsize = GET_SIZE(HDRP(oldptr));
@@ -220,19 +259,6 @@ void *mm_realloc(void *ptr, size_t size)
 	//늘리는 경우
 	size_t temp = *(size_t *)oldptr;
 	if (!GET_ALLOC(HDRP(PREV_BLKP(oldptr)))) {
-	   /* void *pbp = PREV_BLKP(oldptr);
-	    size_t tsize = GET_SIZE(HDRP(pbp)) + oldsize;
-	    out_class(pbp);
-	    memmove(pbp, oldptr, oldsize - DSIZE);
-	    PUT(HDRP(pbp), PACK(tsize, 1));
-	    PUT(FTRP(pbp), PACK(tsize, 1));
-	    
-	    mm_free(pbp);
-	    newptr = mm_malloc(size);
-	    if (newptr != pbp)
-		memcpy(newptr, pbp, oldsize - DSIZE);
-	    *(size_t *)newptr = temp;*/
-	    
 	    if (!GET_SIZE(HDRP(NEXT_BLKP(oldptr)))) {
 		void *bp =  extend_heap((asize - oldsize)/WSIZE);
 		if (!bp)
@@ -263,19 +289,19 @@ void *mm_realloc(void *ptr, size_t size)
 
 int mm_check()
 {
+
     return 0;
 }
 
 
+
 /*
- *
- *
- *
- *
- *
- *
+ * help function들이다.
  */
 
+/*
+ * my_class - size에 맞는 class number를 return 해준다.
+ */
 static int my_class(size_t size)
 {
     int i = 0;
@@ -287,11 +313,14 @@ static int my_class(size_t size)
     return i;
 }
 
+/*
+ * find_class - class에 맞는 header를 return 해준다.
+ */
 static void *find_class(int class) 
 {
     switch (class) {
     case 1:
-	    return &class1;
+	    return NULL;
     case 2:
 	    return &class2;
     case 3:
@@ -320,28 +349,26 @@ static void *find_class(int class)
 	    return &class14;
     case 15:
 	    return &class15;
-    case 16:
-	    return &class16;
-    case 17:
-	    return &class17;
-    case 18:
-	    return &class18;
-    case 19:
-	    return &class19;
     default:
-	    return &class20;
+	    return &class16;
     }
 }
 
+/*
+ * init_class - header안에 담겨있는 pointer들을 모두 0으로 만들어준다.
+ */
 static void init_class()
 {
     int i;
-    for (i = 1; i <= CLASS; i++) {
+    for (i = 2; i <= CLASS; i++) {
 	char *class = find_class(i);
 	*(size_t *)class = 0;
     }
 }
 
+/*
+ * in_class - block ptr을 받아서 알맞은 class에 address order로 넣어준다.
+ */
 static void in_class(void *bp) 
 {
     size_t size = GET_SIZE(HDRP(bp));
@@ -358,6 +385,9 @@ static void in_class(void *bp)
     }
 }
 
+/*
+ * out_class - block ptr을 받아서 class에서 제거한다.
+ */
 static void out_class(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
@@ -372,37 +402,46 @@ static void out_class(void *bp)
     }
 }
 
-static int is_in_class(void *bp)
-{
-    size_t size = GET_SIZE(HDRP(bp));
-    char *class = find_class(my_class(size));
-    char *curr;
-    
-    for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
-	if (NEXT_CLASS(curr) == bp) {
-	    return 1;
-	}
-    }
-    return 0;
-}
-
+/*
+ * traverse_class - 모든 class를 순회한다.
+ */
 static void traverse_class()
 {
     char *curr;
     int i;
 
-    for (i = 1; i <= CLASS; i++) {
+    for (i = 2; i <= CLASS; i++) {
 	char *class = find_class(i);
-	printf("class%d: ", i);
 	for (curr = class; curr != NULL; curr = NEXT_CLASS(curr)) {
-	    printf("%p  ", NEXT_CLASS(curr));
-	    if (*(size_t *)curr)
-		printf("size %d  ", GET_SIZE(HDRP(NEXT_CLASS(curr))));
+	    if (NEXT_CLASS(curr)) {
+		if (GET_ALLOC(HDRP(NEXT_CLASS(curr)))) {
+		    printf("this block is not free\n");
+		}
+
+		if (!GET_ALLOC(HDRP(NEXT_BLKP(NEXT_CLASS(curr)))) ||
+			!GET_ALLOC(HDRP(PREV_BLKP(NEXT_CLASS(curr))))) {
+		    printf("coalescing is not successful\n");
+		}
+
+		if ((size_t)NEXT_CLASS(curr) > (size_t)mem_heap_hi() || 
+			(size_t)NEXT_CLASS(curr) < (size_t)mem_heap_lo()) {
+		    printf("this block ptr is not valid\n");
+		}
+
+		if (i != my_class(GET_SIZE(HDRP(NEXT_CLASS(curr))))) {
+		    printf("this block is in wrong class\n");
+		}
+	    }
+	    //printf("%p  ", NEXT_CLASS(curr));
+	    //if (*(size_t *)curr)
+	//	printf("size %d  ", GET_SIZE(HDRP(NEXT_CLASS(curr))));
 	}
-	printf("\n");
     }
 }
 
+/*
+ * get_asize - size를 받아서 align된 asize를 return 해준다. 
+ */ 
 static size_t get_asize(size_t size) 
 {
     size_t asize;
@@ -416,6 +455,9 @@ static size_t get_asize(size_t size)
     return asize;
 }
 
+/*
+ * extend_heap - words를 받아와서 그 수 만큼 heap크기를 늘린다.
+ */
 static void *extend_heap(size_t words)
 {
     char *bp;
@@ -435,27 +477,30 @@ static void *extend_heap(size_t words)
     return coalesce(bp);
 }
 
-
+/*
+ * coalesce - block ptr을 받아와서 bp 앞뒤로 free block이 있으면
+ *	     합쳐준다. case를 4개로 나눠서 구현하였다.
+ */
 static void *coalesce(void *bp)
 {
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-    if (prev_alloc && next_alloc) {		/* Case 1 */
+    if (prev_alloc && next_alloc) {		/* Case 1 앞뒤 모두 free block이 아닐경우 */
 	;
-    } else if (prev_alloc && !next_alloc) {	/* Case 2 */
+    } else if (prev_alloc && !next_alloc) {	/* Case 2 앞의 block만 free block일 경우 */
 	out_class(NEXT_BLKP(bp));
 	size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
 	PUT(HDRP(bp), PACK(size, 0));
 	PUT(FTRP(bp), PACK(size, 0));
-    } else if (!prev_alloc && next_alloc) {	/* Case 3 */
+    } else if (!prev_alloc && next_alloc) {	/* Case 3 뒤의 block만 free block일 경우*/
 	out_class(PREV_BLKP(bp));
 	size += GET_SIZE(HDRP(PREV_BLKP(bp)));
 	PUT(FTRP(bp), PACK(size, 0));
 	PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
 	bp = PREV_BLKP(bp);
-    } else {					/* Case 4 */
+    } else {					/* Case 4 앞뒤 모두 free block일 경우*/
 	out_class(NEXT_BLKP(bp));
 	out_class(PREV_BLKP(bp));
 	size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
@@ -465,10 +510,14 @@ static void *coalesce(void *bp)
 	bp = PREV_BLKP(bp);
     }
     in_class(bp);
-    //traverse_class();
     return bp;
 }
 
+/*
+ * find_fit - asize를 받아서 알맞은 class list를 순회 하면서 
+ *	     asize보다 큰 size를 가진 block을 first fit으로 찾아
+ *	     return 한다. 찾을 수 없다면 NULL을 return한다.
+ */
 static void *find_fit(size_t asize)
 {
     /* First fit search */
@@ -491,7 +540,13 @@ static void *find_fit(size_t asize)
 }
 
 
-/* in_class out_class통과 */
+/* 
+ * place - free block ptr과 asize를 받아서 allocated block으로 header를 바꿔준다.
+ *	    free block의 size가 asize보다 2 * DSIZE 보다 크다면, 남은 size만큼의
+ *	    free block을 만들어준다.
+ *	    asize < 100이라면 free block의 뒤쪽에다가 allocation한다. 이렇게 
+ *	    함으로써 reallocation시 utilization을 높일 수 있다. 
+ */
 static void *place(void *bp, size_t asize)
 {
     size_t csize = GET_SIZE(HDRP(bp));
@@ -519,5 +574,6 @@ static void *place(void *bp, size_t asize)
 	PUT(HDRP(bp), PACK(csize, 1));
 	PUT(FTRP(bp), PACK(csize, 1));
     }
+    traverse_class();
     return bp;
 }
