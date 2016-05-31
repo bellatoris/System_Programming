@@ -614,6 +614,5 @@ static void *place(void *bp, size_t asize)
 	PUT(HDRP(bp), PACK(csize, 1));
 	PUT(FTRP(bp), PACK(csize, 1));
     }
-    mm_check();
     return bp;
 }
