@@ -268,8 +268,8 @@ void doit(int fd)
 	}
 	if (cache_flag == 1)
 	    create_cache(cache_buf, uri);
+	Close(clientfd);
     }
-    Close(clientfd);
 }
 
 
