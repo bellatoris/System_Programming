@@ -53,7 +53,7 @@ void create_cache(char *buf, char *uri)
     total_cache_size += strlen(cache->data);
     pthread_mutex_unlock(&s_lock);
 
-    while (total_cache_size >  MAX_CACHE_SIZE)
+    while (total_cache_size > MAX_CACHE_SIZE)
 	evict_cache();
 
     while (!insert_cache(cache));
@@ -94,11 +94,13 @@ int find_cache(struct cache **cache, char *uri)
 		if (flag == 1) {
 		    target->valid = 1;
 		    while (!insert_cache(target));
+		    break;
 		}
 	    } else {
 		if (validate(temp, target)) {
 		    *cache = target;
 		    flag = 1;
+		    break;
 		}
 	    }
 	}
@@ -169,7 +171,6 @@ void traverse_cache(void)
 	printf("%s\n", temp->uri);
 	temp = temp->next;
     }
-
 }
 
 
@@ -204,6 +205,7 @@ int main(int argc, char *argv[])
 	*connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
 	Pthread_create(&tid, NULL, doit_thread, connfdp);
     }
+    delete_cache();
     return 0;
 }
 
