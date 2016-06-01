@@ -56,7 +56,6 @@ void doit(int fd)
     size_t buflen;
     rio_t c_rio, s_rio;
 
-
     /* Read request line and headers */
     Rio_readinitb(&c_rio, fd);
     if (!Rio_readlineb(&c_rio, buf, MAXLINE))
@@ -64,9 +63,9 @@ void doit(int fd)
     printf("%s", buf);
 
     sscanf(buf, "%s %s", method, uri);
-    sprintf(buf, "%s %s %s", method, uri, "HTTP/1.0\r\n");
 
     if (strcasecmp(method, "GET")) {
+	printf("this proxy can handle only \"GET\"\n");
 	return;
     }
 
@@ -80,7 +79,6 @@ void doit(int fd)
     }
 
     Close(clientfd);
-    exit(0);
 }
 
 
@@ -91,26 +89,16 @@ int construct_requesthdrs(rio_t *rp, char *buf, char *filename)
     char uri[MAXLINE];
     char host[MAXLINE], port[MAXLINE];
     int clientfd;
-    int flag = 0;
+    int h_flag = 0, c_flag = 0;
 
     sscanf(buf, "%s %s", temp, uri);
+
     /* parsing the usi */
     parse_uri(uri, host, port, filename);
+    sprintf(buf, "%s %s %s", temp, filename, "HTTP/1.0\r\n");
 
     /* read header */
-    Rio_readlineb(rp, temp, MAXLINE);
-    sscanf(temp, "%s", temp2);
-
-    if (strcmp(temp2, "Host:"))
-	sprintf(buf, "%sHost: %s\r\n", buf, host);
-    else
-	strcat(buf, temp);
-
     strcat(buf, user_agent_hdr);
-
-    if (strcmp(temp2, "User-Agent:") && strcmp(temp2, "Connection:"))
-	strcat(buf, temp);
-
     while (strcmp(temp, "\r\n")) {
 	Rio_readlineb(rp, temp, MAXLINE);
 	printf("%s", temp);
@@ -118,24 +106,28 @@ int construct_requesthdrs(rio_t *rp, char *buf, char *filename)
 	
 	if (!strcmp(temp2, "User-Agent:"))
 	    continue;
-
+	if (!strcmp(temp2, "Host:"))
+	    h_flag = 1;
 	if (strcmp(temp2, "Connection:") && strcmp(temp2, "Proxy-Connection:")) {
 	    strcat(buf, temp);
-	} else if (flag == 0) {
+	} else if (c_flag == 0) {
 	    sprintf(buf, "%sConnection: close\r\n", buf);
 	    sprintf(buf, "%sProxy-Connection: close\r\n", buf);
-	    flag = 1;
+	    c_flag = 1;
 	}
 	
-	if (!strcmp(temp, "\r\n") && flag == 0) {
-	    sprintf(buf, "%sConnection: close\r\n", buf);
-	    sprintf(buf, "%sProxy-Connection: close\r\n", buf);
+	if (!strcmp(temp, "\r\n")) {	
+	    if (h_flag == 0) {
+		sprintf(buf, "%sHost: %s\r\n", buf, host);
+	    }
+	    if (c_flag == 0) {
+		sprintf(buf, "%sConnection: close\r\n", buf);
+		sprintf(buf, "%sProxy-Connection: close\r\n", buf);
+	    }
 	    strcat(buf, temp);
 	}
     }
-
     printf("%s", buf);
-
     clientfd = Open_clientfd(host, port);
     return clientfd;
 }
@@ -165,9 +157,9 @@ void parse_uri(char *uri, char *host, char *port, char *filename)
 	}
 	*port = '\0';
     } else {
-	port = "80";
+	strcpy(port, "80");
     }
     
     /* filename 가져옴 */
-    sscanf(ptr + 1, "%s", filename);
+    sscanf(ptr, "%s", filename);
 }
