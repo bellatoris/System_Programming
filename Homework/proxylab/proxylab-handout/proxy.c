@@ -9,20 +9,15 @@
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
-
 void doit(int fd);
-void read_requesthdrs(rio_t *rp);
-int parse_uri(char *uri, char *filename, char *cgiargs);
-void serve_static(int fd, char *filename, int filesize);
-void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
-void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
-							char *longmsg);
+int construct_requesthdrs(rio_t *rp, char *buf, char *filename);
+void parse_uri(char *uri, char *host, char *port, char *filename);
+
+void *doit_thread(void *vargp);
 
 int main(int argc, char *argv[])
 {
     int listenfd;
-    char hostname[MAXLINE], port[MAXLINE];
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     pthread_t tid;
@@ -38,170 +33,141 @@ int main(int argc, char *argv[])
 	int *connfdp = Malloc(sizeof(int));
 	clientlen = sizeof(clientaddr);
 	*connfdp = Accept(listenfd, (SA *)&clientaddr, &clientlen);
-	Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE,
-						    port, MAXLINE, 0);
-	printf("Accepted connection from (%s, %s)\n", hostname, port);
-	doit(*connfdp);
-	Close(*connfdp);
+	Pthread_create(&tid, NULL, doit_thread, connfdp);
     }
-
-    printf("%s", user_agent_hdr);
     return 0;
+}
+
+void *doit_thread(void *vargp)
+{
+    int connfd = *((int *)vargp);
+    Pthread_detach(pthread_self());
+    Free(vargp);
+    doit(connfd);
+    Close(connfd);
+    return NULL;
 }
 
 void doit(int fd)
 {
-    int is_static;
-    struct stat sbuf;
-    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-    char filename[MAXLINE], cgiargs[MAXLINE];
-    rio_t rio;
+    int clientfd;
+    char buf[MAXLINE], method[MAXLINE], uri[MAXLINE];
+    char filename[MAXLINE];
+    size_t buflen;
+    rio_t c_rio, s_rio;
+
 
     /* Read request line and headers */
-    Rio_readinitb(&rio, fd);
-    if (!Rio_readlineb(&rio, buf, MAXLINE))
+    Rio_readinitb(&c_rio, fd);
+    if (!Rio_readlineb(&c_rio, buf, MAXLINE))
 	return;
     printf("%s", buf);
-    sscanf(buf, "%s %s %s", method, uri, version);
+
+    sscanf(buf, "%s %s", method, uri);
+    sprintf(buf, "%s %s %s", method, uri, "HTTP/1.0\r\n");
+
     if (strcasecmp(method, "GET")) {
-	clienterror(fd, method, "501", "Not Implemented",
-		    "Tiny does not implemented this method");
 	return;
     }
-    read_requesthdrs(&rio);
 
-    /* Parse URI from GET request */
-    is_static = parse_uri(uri, filename, cgiargs);
-    if (stat(filename, &sbuf) < 0) {
-	clienterror(fd, filename, "404", "Not found",
-			"Tiny couldn't find this file");
-	return;
+    clientfd = construct_requesthdrs(&c_rio, buf, filename);
+
+    Rio_readinitb(&s_rio, clientfd);
+    Rio_writen(clientfd, buf, strlen(buf));
+
+    while ((buflen = Rio_readlineb(&s_rio, buf, MAXLINE)) != 0) {
+	Rio_writen(fd, buf, buflen);
     }
-    
-    if (is_static) {
-	if (!(S_ISREG(sbuf.st_mode)) || !(S_IRUSR & sbuf.st_mode)) {
-	    clienterror(fd, filename, "403", "Forbidden", 
-			"Tiny couldn't read this file");
-	    return;
-	}
-	serve_static(fd, filename, sbuf.st_size);
-    } else {
-	if (!(S_ISREG(sbuf.st_mode)) || !(S_IXUSR & sbuf.st_mode)) {
-	    clienterror(fd, filename, "403", "Forbidden",
-			"Tiny couldn't run the CGI program");
-	    return;
-	}
-	serve_dynamic(fd, filename, cgiargs);
-    }
+
+    Close(clientfd);
+    exit(0);
 }
 
-void read_requesthdrs(rio_t *rp)
+
+/* 단순히 header를 읽고 적는 함수 */
+int construct_requesthdrs(rio_t *rp, char *buf, char *filename)
 {
-    char buf[MAXLINE];
+    char temp[MAXLINE], temp2[MAXLINE];
+    char uri[MAXLINE];
+    char host[MAXLINE], port[MAXLINE];
+    int clientfd;
+    int flag = 0;
 
-    Rio_readlineb(rp, buf, MAXLINE);
-    printf("%s", buf);
-    while (strcmp(buf, "\r\n")) {
-	Rio_readlineb(rp, buf, MAXLINE);
-	printf("%s", buf);
+    sscanf(buf, "%s %s", temp, uri);
+    /* parsing the usi */
+    parse_uri(uri, host, port, filename);
+
+    /* read header */
+    Rio_readlineb(rp, temp, MAXLINE);
+    sscanf(temp, "%s", temp2);
+
+    if (strcmp(temp2, "Host:"))
+	sprintf(buf, "%sHost: %s\r\n", buf, host);
+    else
+	strcat(buf, temp);
+
+    strcat(buf, user_agent_hdr);
+
+    if (strcmp(temp2, "User-Agent:") && strcmp(temp2, "Connection:"))
+	strcat(buf, temp);
+
+    while (strcmp(temp, "\r\n")) {
+	Rio_readlineb(rp, temp, MAXLINE);
+	printf("%s", temp);
+	sscanf(temp, "%s", temp2);
+	
+	if (!strcmp(temp2, "User-Agent:"))
+	    continue;
+
+	if (strcmp(temp2, "Connection:") && strcmp(temp2, "Proxy-Connection:")) {
+	    strcat(buf, temp);
+	} else if (flag == 0) {
+	    sprintf(buf, "%sConnection: close\r\n", buf);
+	    sprintf(buf, "%sProxy-Connection: close\r\n", buf);
+	    flag = 1;
+	}
+	
+	if (!strcmp(temp, "\r\n") && flag == 0) {
+	    sprintf(buf, "%sConnection: close\r\n", buf);
+	    sprintf(buf, "%sProxy-Connection: close\r\n", buf);
+	    strcat(buf, temp);
+	}
     }
-    return;
+
+    printf("%s", buf);
+
+    clientfd = Open_clientfd(host, port);
+    return clientfd;
 }
 
-int parse_uri(char *uri, char *filename, char *cgiargs)
+void parse_uri(char *uri, char *host, char *port, char *filename)
 {
     char *ptr;
+    char temp_uri[MAXLINE];
 
-    if (!strstr(uri, "cgi-bin")) {
-	strcpy(cgiargs,"");
-	strcpy(filename, ".");
-	strcat(filename, uri);
+    strcpy(temp_uri, uri);
 
-	if (uri[strlen(uri)-1] == '/')
-	    strcat(filename, "home.html");
-	return 1;
-    } else {
-	ptr = index(uri, '?');
-	if (ptr) {
-	    strcpy(cgiargs, ptr+1);
-	    *ptr = '\0';
-	} else {
-	    strcpy(cgiargs, "");
+    ptr = temp_uri + 7;
+    while (*ptr != '/' && *ptr != ':') {
+	*host = *ptr;
+	ptr++;
+	host++;
+    }
+    *host = '\0';
+
+    /* port번호 존재 한다면 가져옴 */
+    if (*ptr == ':') {
+	ptr++;
+	while (*ptr != '/') {
+	    *port = *ptr;
+	    ptr++;
+	    port++;
 	}
-	strcpy(filename, ".");
-	strcat(filename, uri);
-	return 0;
+	*port = '\0';
+    } else {
+	port = "80";
     }
-}
-
-void serve_static(int fd, char *filename, int filesize)
-{
-    int srcfd;
-    char *srcp, filetype[MAXLINE], buf[MAXBUF];
-
-    get_filetype(filename, filetype);
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
-    sprintf(buf, "%sServer: Tiny Web Server\r\n", buf);
-    sprintf(buf, "%sConnection: close\r\n", buf);
-    sprintf(buf, "%sContent-length: %d\r\n", buf, filesize);
-    sprintf(buf, "%sContent-type: %s\r\n\r\n", buf, filetype);
-    Rio_writen(fd, buf, strlen(buf));
-    printf("Response headers:\n");
-    printf("%s",buf);
-
-    srcfd = Open(filename, O_RDONLY, 0);
-    srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);
-    Close(srcfd);
-    Rio_writen(fd, srcp, filesize);
-    Munmap(srcp, filesize);
-}
-
-void get_filetype(char *filename, char *filetype)
-{
-    if (strstr(filename, ".html"))
-	strcpy(filetype, "test/html");
-    else if (strstr(filename, ".git"))
-	strcpy(filetype, "image/gif");
-    else if (strstr(filename, ".png"))
-	strcpy(filetype, "image/png");
-    else if (strstr(filename, ".jpg"))
-	strcpy(filetype, "image/jpeg");
-    else
-	strcpy(filetype, "text/plain");
-}
-
-void serve_dynamic(int fd, char *filename, char *cgiargs)
-{
-    char buf[MAXLINE], *emptylist[] = { NULL };
-
-    sprintf(buf, "HTTP/1.0 200 OK\r\n");
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Server: Tiny Web Server\r\n");
-    Rio_writen(fd, buf, strlen(buf));
-
-    if (Fork() == 0) {
-	setenv("QUERY_STRING", cgiargs, 1);
-	Dup2(fd, STDOUT_FILENO);
-	Execve(filename, emptylist, environ);
-    }
-    Wait(NULL);
-}
-
-void clienterror(int fd, char *cause, char *errnum,
-			char *shortmsg, char *longmsg)
-{
-    char buf[MAXLINE], body[MAXBUF];
-
-    sprintf(body, "<html><title>Tiny Error</title>");
-    sprintf(body, "%s<body bgcolor=""fffff"">\r\n", body);
-    sprintf(body, "%s<p>%s: %s\r\n", body, longmsg, cause);
-    sprintf(body, "%s<hr><em>The Tiny Web server</em>\r\n", body);
-
-    sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Content-type: text/html\r\n");
-    Rio_writen(fd, buf, strlen(buf));
-    sprintf(buf, "Content-length: %d\r\n\r\n", (int)strlen(body));
-    Rio_writen(fd, buf, strlen(buf));
-    Rio_writen(fd, body, strlen(body));
+    
+    /* filename 가져옴 */
+    sscanf(ptr + 1, "%s", filename);
 }
