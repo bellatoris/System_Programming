@@ -1,3 +1,12 @@
+/*
+ * Student ID: 2012-11598
+ * Name: 민두기
+ *
+ * Cache는 LRU를 queue를 사용하여 구현하였다. 
+ * Multithreading을 사용하여 concurrency를 만족하였고,
+ * Lazy Deletion 기법을 사용하여 queue의 synchronization을 
+ * 구현하였다.
+ */
 #include <stdio.h>
 #include <signal.h>
 #include <pthread.h>
